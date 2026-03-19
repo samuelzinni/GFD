@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import api from '../lib/api';
 import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, getDocs } from 'firebase/firestore';
 import { Users, UserCheck, Grid3X3, Clock, TrendingUp, Armchair } from 'lucide-react';
 
 export default function Dashboard() {
@@ -9,37 +8,50 @@ export default function Dashboard() {
   const [recentCheckins, setRecentCheckins] = useState([]);
   const [eventId, setEventId] = useState(null);
 
-  const loadStats = async (eid) => {
-    try {
-      const res = await api.get(`/dashboard/stats?event_id=${eid}`);
-      setStats(res.data);
-    } catch {}
-  };
-
   useEffect(() => {
     let unsubParticipants = null;
     let unsubCheckins = null;
 
     const init = async () => {
-      const evRes = await api.get('/events');
-      if (evRes.data.length > 0) {
-        const eid = evRes.data[0].id;
-        setEventId(eid);
-        await loadStats(eid);
-
-        // Realtime listener on participants for live stats
-        const pQuery = query(collection(db, 'participants'), where('eventId', '==', eid));
-        unsubParticipants = onSnapshot(pQuery, () => {
-          loadStats(eid);
-        });
-
-        // Realtime listener on check-in log
-        const cQuery = query(collection(db, 'checkInLog'), orderBy('timestamp', 'desc'), limit(15));
-        unsubCheckins = onSnapshot(cQuery, (snapshot) => {
-          const checkins = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setRecentCheckins(checkins);
-        });
+      // Get first event directly from Firestore
+      const evSnapshot = await getDocs(collection(db, 'events'));
+      if (evSnapshot.empty) {
+        setStats({ totalParticipants: 0, totalStudents: 0, totalExecutives: 0, checkedIn: 0, notCheckedIn: 0, seatedParticipants: 0, tablesCount: 0 });
+        return;
       }
+      const eid = evSnapshot.docs[0].id;
+      setEventId(eid);
+
+      // Realtime listener on participants for live stats
+      const pQuery = query(collection(db, 'participants'), where('eventId', '==', eid));
+      unsubParticipants = onSnapshot(pQuery, (snapshot) => {
+        const parts = snapshot.docs.map(d => d.data());
+        const totalParticipants = parts.length;
+        const totalStudents = parts.filter(p => p.role === 'student').length;
+        const totalExecutives = parts.filter(p => p.role === 'executive').length;
+        const checkedIn = parts.filter(p => p.checkedIn).length;
+        const seatedParticipants = parts.filter(p => p.seatId).length;
+
+        // Get tables count
+        getDocs(query(collection(db, 'tables'), where('eventId', '==', eid))).then(tablesSnap => {
+          setStats({
+            totalParticipants,
+            totalStudents,
+            totalExecutives,
+            checkedIn,
+            notCheckedIn: totalParticipants - checkedIn,
+            seatedParticipants,
+            tablesCount: tablesSnap.size
+          });
+        });
+      });
+
+      // Realtime listener on check-in log
+      const cQuery = query(collection(db, 'checkInLog'), orderBy('timestamp', 'desc'), limit(15));
+      unsubCheckins = onSnapshot(cQuery, (snapshot) => {
+        const checkins = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setRecentCheckins(checkins);
+      });
     };
 
     init();

@@ -1,42 +1,62 @@
-import { useState, useEffect } from 'react';
-import api from '../lib/api';
+import { useState, useEffect, useMemo } from 'react';
 import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { User, UserCheck, Crown, ChevronUp } from 'lucide-react';
+import { collection, query, where, onSnapshot, getDocs, updateDoc, doc, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { User, UserCheck, Crown, ChevronUp, Plus } from 'lucide-react';
 
 export default function Tables() {
-  const [tables, setTables] = useState([]);
+  const [rawTables, setRawTables] = useState([]);
+  const [rawSeats, setRawSeats] = useState([]);
   const [participants, setParticipants] = useState([]);
   const [eventId, setEventId] = useState(null);
   const [expandedTable, setExpandedTable] = useState(null);
   const [assigning, setAssigning] = useState(null);
 
-  const loadTables = async (eid) => {
-    const res = await api.get(`/tables?event_id=${eid}`);
-    setTables(res.data);
-  };
+  // Compute enriched tables from raw data
+  const tables = useMemo(() => {
+    return rawTables.map(t => {
+      const tableSeats = rawSeats
+        .filter(s => s.tableId === t.id)
+        .sort((a, b) => a.seatNumber - b.seatNumber)
+        .map(seat => {
+          const participant = participants.find(p => p.id === seat.participantId);
+          return {
+            ...seat,
+            firstName: participant?.firstName || null,
+            lastName: participant?.lastName || null,
+            checkedIn: participant?.checkedIn || false,
+          };
+        });
+      return { ...t, seats: tableSeats };
+    });
+  }, [rawTables, rawSeats, participants]);
 
   useEffect(() => {
     let unsubParticipants = null;
+    let unsubTables = null;
     let unsubSeats = null;
 
     const init = async () => {
-      const evRes = await api.get('/events');
-      if (evRes.data.length > 0) {
-        const eid = evRes.data[0].id;
+      const evSnapshot = await getDocs(collection(db, 'events'));
+      if (!evSnapshot.empty) {
+        const eid = evSnapshot.docs[0].id;
         setEventId(eid);
-        await loadTables(eid);
+
+        // Realtime listener for tables
+        const tQuery = query(collection(db, 'tables'), where('eventId', '==', eid), orderBy('tableNumber'));
+        unsubTables = onSnapshot(tQuery, (snapshot) => {
+          setRawTables(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // Realtime listener for seats
+        const sQuery = query(collection(db, 'seats'), where('eventId', '==', eid));
+        unsubSeats = onSnapshot(sQuery, (snapshot) => {
+          setRawSeats(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
 
         // Realtime listener for participants
         const pQuery = query(collection(db, 'participants'), where('eventId', '==', eid));
         unsubParticipants = onSnapshot(pQuery, (snapshot) => {
           setParticipants(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-
-        // Realtime listener for seats
-        const sQuery = query(collection(db, 'seats'), where('eventId', '==', eid));
-        unsubSeats = onSnapshot(sQuery, () => {
-          loadTables(eid);
         });
       }
     };
@@ -44,17 +64,47 @@ export default function Tables() {
     init();
     return () => {
       if (unsubParticipants) unsubParticipants();
+      if (unsubTables) unsubTables();
       if (unsubSeats) unsubSeats();
     };
   }, []);
 
   const assignSeat = async (tableId, seatId, participantId) => {
-    await api.post(`/tables/${tableId}/seats/${seatId}/assign`, { participant_id: participantId });
+    await updateDoc(doc(db, 'seats', seatId), { participantId });
+    await updateDoc(doc(db, 'participants', participantId), { seatId, tableId });
     setAssigning(null);
   };
 
   const unassignSeat = async (tableId, seatId) => {
-    await api.post(`/tables/${tableId}/seats/${seatId}/unassign`);
+    const seat = tables.flatMap(t => t.seats).find(s => s.id === seatId);
+    if (seat?.participantId) {
+      await updateDoc(doc(db, 'participants', seat.participantId), { seatId: null, tableId: null });
+    }
+    await updateDoc(doc(db, 'seats', seatId), { participantId: null });
+  };
+
+  const addTable = async () => {
+    if (!eventId) return;
+    const nextNumber = tables.length > 0 ? Math.max(...tables.map(t => t.tableNumber)) + 1 : 1;
+    const seatPattern = ['student', 'student', 'executive', 'student', 'student', 'executive', 'student', 'student', 'executive'];
+
+    const tableRef = await addDoc(collection(db, 'tables'), {
+      eventId,
+      tableNumber: nextNumber,
+      tableName: `Tisch ${nextNumber}`,
+      createdAt: serverTimestamp()
+    });
+
+    for (let s = 1; s <= 9; s++) {
+      await addDoc(collection(db, 'seats'), {
+        tableId: tableRef.id,
+        eventId,
+        seatNumber: s,
+        seatType: seatPattern[s - 1],
+        participantId: null,
+        createdAt: serverTimestamp()
+      });
+    }
   };
 
   // Get unassigned participants filtered by seat type
@@ -63,9 +113,14 @@ export default function Tables() {
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-1">Tischplan</h1>
-        <p className="text-sm text-[#64748b]">12 Tische · 9 Plätze pro Tisch (6 Studenten + 3 Executives)</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white mb-1">Tischplan</h1>
+          <p className="text-sm text-[#64748b]">{tables.length} Tische · 9 Plätze pro Tisch (6 Studenten + 3 Executives)</p>
+        </div>
+        <button className="gfd-btn text-xs flex items-center gap-1" onClick={addTable}>
+          <Plus size={14} /> Tisch hinzufügen
+        </button>
       </div>
 
       {/* Visual overview grid */}

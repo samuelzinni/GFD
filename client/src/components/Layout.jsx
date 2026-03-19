@@ -27,7 +27,7 @@ export default function Layout({ children }) {
     <div className="min-h-screen flex flex-col md:flex-row">
       {/* Mobile header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-[#1a1a2e]">
-        <span className="text-sm font-bold tracking-wider text-[#4a8af4]">GFD TICKETING</span>
+        <span className="text-sm font-bold tracking-wider text-[#4a8af4]">GFD TICKET SYSTEM</span>
         <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-white">
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -43,7 +43,7 @@ export default function Layout({ children }) {
       `}>
         <div className="hidden md:block p-6 pb-4">
           <div className="text-xs font-bold tracking-[3px] text-[#4a8af4] mb-1">GERMAN FINANCE</div>
-          <div className="text-xs font-bold tracking-[3px] text-[#4a8af4]">DINNER TICKETING</div>
+          <div className="text-xs font-bold tracking-[3px] text-[#4a8af4]">DINNER TICKET SYSTEM</div>
           <div className="gfd-gradient-line mt-4"></div>
         </div>
 

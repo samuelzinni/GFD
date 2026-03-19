@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, query } from 'firebase/firestore';
+import app from '../lib/firebase';
+import { collection, onSnapshot, query, getDocs, addDoc, updateDoc, doc, writeBatch, serverTimestamp, limit } from 'firebase/firestore';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { Users, Plus, Trash2, Shield, ScanLine, Calendar, Rocket } from 'lucide-react';
 
 export default function Settings() {
@@ -24,21 +26,66 @@ export default function Settings() {
   }, []);
 
   const loadEvent = async () => {
-    const res = await api.get('/events');
-    if (res.data.length > 0) {
-      setEvent(res.data[0]);
-      setEventForm(res.data[0]);
+    const snapshot = await getDocs(collection(db, 'events'));
+    if (!snapshot.empty) {
+      const eventData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+      setEvent(eventData);
+      setEventForm(eventData);
     }
   };
 
   const initializeEvent = async () => {
     setInitStatus('Initialisiere...');
     try {
-      const res = await api.post('/setup/init');
-      setInitStatus(res.data.message);
+      // Check if already initialized
+      const existing = await getDocs(query(collection(db, 'events'), limit(1)));
+      if (!existing.empty) {
+        setInitStatus('Event existiert bereits');
+        loadEvent();
+        return;
+      }
+
+      const batch = writeBatch(db);
+
+      // Create event
+      const eventRef = doc(collection(db, 'events'));
+      batch.set(eventRef, {
+        name: 'German Finance Dinner 2026',
+        date: '2026-06-15',
+        location: 'TBD',
+        description: '',
+        createdAt: serverTimestamp()
+      });
+
+      const seatPattern = ['student', 'student', 'executive', 'student', 'student', 'executive', 'student', 'student', 'executive'];
+
+      for (let t = 1; t <= 12; t++) {
+        const tableRef = doc(collection(db, 'tables'));
+        batch.set(tableRef, {
+          eventId: eventRef.id,
+          tableNumber: t,
+          tableName: `Tisch ${t}`,
+          createdAt: serverTimestamp()
+        });
+
+        for (let s = 1; s <= 9; s++) {
+          const seatRef = doc(collection(db, 'seats'));
+          batch.set(seatRef, {
+            tableId: tableRef.id,
+            eventId: eventRef.id,
+            seatNumber: s,
+            seatType: seatPattern[s - 1],
+            participantId: null,
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+
+      await batch.commit();
+      setInitStatus('Event mit 12 Tischen erstellt!');
       loadEvent();
     } catch (err) {
-      setInitStatus(err.response?.data?.error || 'Fehler');
+      setInitStatus('Fehler: ' + err.message);
     }
   };
 
@@ -46,26 +93,50 @@ export default function Settings() {
     if (!form.username || !form.password) return alert('Username und Passwort erforderlich');
     if (form.password.length < 6) return alert('Passwort muss mindestens 6 Zeichen haben');
     try {
-      await api.post('/setup/users', form);
+      const email = `${form.username.toLowerCase().trim()}@gfd.local`;
+
+      // Create secondary app to avoid signing out current user
+      const secondaryApp = initializeApp(app.options, 'secondary');
+      const secondaryAuth = getAuth(secondaryApp);
+
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, email, form.password);
+
+      // Create user doc in Firestore
+      const { setDoc } = await import('firebase/firestore');
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        username: form.username.toLowerCase().trim(),
+        displayName: form.displayName || form.username,
+        role: form.role || 'scanner',
+        createdAt: serverTimestamp()
+      });
+
+      await deleteApp(secondaryApp);
+
       setForm({ username: '', password: '', displayName: '', role: 'scanner' });
       setShowAdd(false);
     } catch (err) {
-      alert(err.response?.data?.error || 'Fehler beim Erstellen');
+      alert(err.message || 'Fehler beim Erstellen');
     }
   };
 
   const deleteUser = async (uid, username) => {
     if (!confirm(`User "${username}" wirklich löschen?`)) return;
     try {
-      await api.delete(`/setup/users/${uid}`);
+      const { deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'users', uid));
     } catch (err) {
-      alert(err.response?.data?.error || 'Fehler beim Löschen');
+      alert(err.message || 'Fehler beim Löschen');
     }
   };
 
   const updateEvent = async () => {
     if (!event) return;
-    await api.put(`/events/${event.id}`, eventForm);
+    await updateDoc(doc(db, 'events', event.id), {
+      name: eventForm.name,
+      date: eventForm.date,
+      location: eventForm.location,
+      description: eventForm.description
+    });
     alert('Event aktualisiert');
   };
 

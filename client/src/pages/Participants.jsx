@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import api from '../lib/api';
 import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, addDoc, updateDoc, deleteDoc, doc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { Plus, Upload, Search, Download, Trash2, Edit2, Check, X } from 'lucide-react';
-import { getAuthToken } from '../lib/api';
 
 export default function Participants() {
   const [participants, setParticipants] = useState([]);
@@ -13,25 +11,35 @@ export default function Participants() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'student', notes: '' });
   const [filter, setFilter] = useState('all');
+  const [tables, setTables] = useState([]);
 
   useEffect(() => {
-    let unsub = null;
+    let unsubParticipants = null;
+    let unsubTables = null;
 
     const init = async () => {
-      const evRes = await api.get('/events');
-      if (evRes.data.length > 0) {
-        const eid = evRes.data[0].id;
+      const evSnapshot = await getDocs(collection(db, 'events'));
+      if (!evSnapshot.empty) {
+        const eid = evSnapshot.docs[0].id;
         setEventId(eid);
 
         const q = query(collection(db, 'participants'), where('eventId', '==', eid), orderBy('lastName'), orderBy('firstName'));
-        unsub = onSnapshot(q, (snapshot) => {
-          setParticipants(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        unsubParticipants = onSnapshot(q, (snapshot) => {
+          setParticipants(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        const tQuery = query(collection(db, 'tables'), where('eventId', '==', eid), orderBy('tableNumber'));
+        unsubTables = onSnapshot(tQuery, (snap) => {
+          setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
       }
     };
 
     init();
-    return () => { if (unsub) unsub(); };
+    return () => {
+      if (unsubParticipants) unsubParticipants();
+      if (unsubTables) unsubTables();
+    };
   }, []);
 
   const filtered = participants.filter(p => {
@@ -44,39 +52,43 @@ export default function Participants() {
   });
 
   const handleAdd = async () => {
-    await api.post('/participants', { ...form, eventId });
+    if (!form.firstName || !form.lastName) return;
+    const ticketCode = 'GFD-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    await addDoc(collection(db, 'participants'), {
+      ...form,
+      eventId,
+      ticketCode,
+      checkedIn: false,
+      seatId: null,
+      tableId: form.tableId || null,
+      createdAt: serverTimestamp()
+    });
     setForm({ firstName: '', lastName: '', email: '', role: 'student', notes: '' });
     setShowAdd(false);
   };
 
   const handleUpdate = async (id) => {
-    await api.put(`/participants/${id}`, form);
+    await updateDoc(doc(db, 'participants', id), {
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      role: form.role,
+      notes: form.notes
+    });
     setEditingId(null);
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Teilnehmer wirklich löschen?')) return;
-    await api.delete(`/participants/${id}`);
+    await deleteDoc(doc(db, 'participants', id));
   };
 
-  const handleImport = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('event_id', eventId);
-    try {
-      const res = await api.post('/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(`${res.data.imported} Teilnehmer importiert${res.data.errors > 0 ? `, ${res.data.errors} Fehler` : ''}`);
-    } catch (err) {
-      alert(err.response?.data?.error || 'Import fehlgeschlagen');
-    }
-    e.target.value = '';
+  const handleImport = () => {
+    alert('Import ist momentan nicht verfügbar');
   };
 
-  const downloadTicket = async (id) => {
-    const token = await getAuthToken();
-    window.open(`${import.meta.env.VITE_API_URL || ''}/api/tickets/${id}/pdf?token=${token}`, '_blank');
+  const downloadTicket = () => {
+    alert('PDF-Download ist momentan nicht verfügbar');
   };
 
   return (
@@ -90,10 +102,9 @@ export default function Participants() {
           <button className="gfd-btn" onClick={() => { setShowAdd(true); setForm({ firstName: '', lastName: '', email: '', role: 'student', notes: '' }); }}>
             <Plus size={16} /> Hinzufügen
           </button>
-          <label className="gfd-btn gfd-btn-outline cursor-pointer">
+          <button className="gfd-btn gfd-btn-outline" onClick={handleImport}>
             <Upload size={16} /> Importieren
-            <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImport} />
-          </label>
+          </button>
         </div>
       </div>
 
@@ -114,13 +125,19 @@ export default function Participants() {
       {showAdd && (
         <div className="gfd-card p-4 mb-4 animate-fade-in">
           <h3 className="text-sm font-semibold text-white mb-3">Neuen Teilnehmer hinzufügen</h3>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
             <input className="gfd-input" placeholder="Vorname" value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} />
             <input className="gfd-input" placeholder="Nachname" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} />
             <input className="gfd-input" placeholder="E-Mail" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             <select className="gfd-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
               <option value="student">Student</option>
               <option value="executive">Executive</option>
+            </select>
+            <select className="gfd-select" value={form.tableId || ''} onChange={e => setForm({ ...form, tableId: e.target.value || null })}>
+              <option value="">Kein Tisch</option>
+              {tables.map(t => (
+                <option key={t.id} value={t.id}>Tisch {t.tableNumber}</option>
+              ))}
             </select>
             <div className="flex gap-2">
               <button className="gfd-btn flex-1" onClick={handleAdd}>Speichern</button>
