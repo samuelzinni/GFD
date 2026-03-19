@@ -30,7 +30,7 @@ export default function Login() {
         <div className="text-center mb-8">
           <div className="text-xs font-bold tracking-[3px] text-[#4a8af4] mb-2">GERMAN FINANCE DINNER</div>
           <div className="gfd-gradient-line mb-6"></div>
-          <h1 className="text-2xl font-bold text-white mb-2">Ticketing Login</h1>
+          <h1 className="text-2xl font-bold text-white mb-2">Ticket System</h1>
           <p className="text-sm text-[#a1a1aa]">Melde dich an, um fortzufahren</p>
         </div>
 

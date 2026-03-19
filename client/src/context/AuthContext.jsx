@@ -5,14 +5,41 @@ import {
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import api from '../lib/api';
+import { doc, getDoc, setDoc, getDocs, collection, limit, query, serverTimestamp } from 'firebase/firestore';
 
 const AuthContext = createContext(null);
 
 // Internally map username to email for Firebase Auth
 function usernameToEmail(username) {
   return `${username.toLowerCase().trim()}@gfd.local`;
+}
+
+function emailToUsername(email) {
+  return email.replace('@gfd.local', '');
+}
+
+// Ensure user document exists in Firestore (replaces Cloud Function)
+async function ensureUserDoc(firebaseUser) {
+  const userRef = doc(db, 'users', firebaseUser.uid);
+  const userDoc = await getDoc(userRef);
+
+  if (userDoc.exists()) {
+    return { id: firebaseUser.uid, ...userDoc.data() };
+  }
+
+  // If no users exist yet, make this one admin
+  const usersSnapshot = await getDocs(query(collection(db, 'users'), limit(1)));
+  const role = usersSnapshot.empty ? 'admin' : 'scanner';
+  const username = emailToUsername(firebaseUser.email);
+
+  await setDoc(userRef, {
+    username,
+    displayName: username,
+    role,
+    createdAt: serverTimestamp()
+  });
+
+  return { id: firebaseUser.uid, username, displayName: username, role };
 }
 
 export function AuthProvider({ children }) {
@@ -22,20 +49,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (userDoc.exists()) {
-          setUser({ id: firebaseUser.uid, ...userDoc.data() });
-        } else {
-          // First user setup
-          try {
-            await api.post('/setup/admin', {});
-            const refreshed = await getDoc(doc(db, 'users', firebaseUser.uid));
-            if (refreshed.exists()) {
-              setUser({ id: firebaseUser.uid, ...refreshed.data() });
-            }
-          } catch {
-            setUser(null);
-          }
+        try {
+          const userData = await ensureUserDoc(firebaseUser);
+          setUser(userData);
+        } catch {
+          setUser(null);
         }
       } else {
         setUser(null);
@@ -49,10 +67,7 @@ export function AuthProvider({ children }) {
   const login = async (username, password) => {
     const email = usernameToEmail(username);
     const cred = await signInWithEmailAndPassword(auth, email, password);
-    // Ensure user doc exists
-    try { await api.post('/setup/admin', {}); } catch {}
-    const userDoc = await getDoc(doc(db, 'users', cred.user.uid));
-    const userData = userDoc.exists() ? { id: cred.user.uid, ...userDoc.data() } : null;
+    const userData = await ensureUserDoc(cred.user);
     setUser(userData);
     return userData;
   };
