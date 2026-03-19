@@ -28,6 +28,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
+          <img src="/logo.png" alt="GFD Logo" className="h-16 w-16 object-contain mx-auto mb-4" />
           <div className="text-xs font-bold tracking-[3px] text-[#4a8af4] mb-2">GERMAN FINANCE DINNER</div>
           <div className="gfd-gradient-line mb-6"></div>
           <h1 className="text-2xl font-bold text-white mb-2">Ticket System</h1>

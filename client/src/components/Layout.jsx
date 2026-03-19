@@ -27,7 +27,10 @@ export default function Layout({ children }) {
     <div className="min-h-screen flex flex-col md:flex-row">
       {/* Mobile header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-[#1a1a2e]">
-        <span className="text-sm font-bold tracking-wider text-[#4a8af4]">GFD TICKET SYSTEM</span>
+        <div className="flex items-center gap-2">
+          <img src="/logo.png" alt="GFD Logo" className="h-8 w-8 object-contain" />
+          <span className="text-sm font-bold tracking-wider text-[#4a8af4]">GFD TICKET SYSTEM</span>
+        </div>
         <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-white">
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -42,6 +45,7 @@ export default function Layout({ children }) {
         z-50
       `}>
         <div className="hidden md:block p-6 pb-4">
+          <img src="/logo.png" alt="GFD Logo" className="h-12 w-12 object-contain mb-3" />
           <div className="text-xs font-bold tracking-[3px] text-[#4a8af4] mb-1">GERMAN FINANCE</div>
           <div className="text-xs font-bold tracking-[3px] text-[#4a8af4]">DINNER TICKET SYSTEM</div>
           <div className="gfd-gradient-line mt-4"></div>
