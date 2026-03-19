@@ -10,6 +10,6 @@
     "deploy:hosting": "npm run build && firebase deploy --only hosting",
     "deploy:functions": "firebase deploy --only functions",
     "deploy:rules": "firebase deploy --only firestore:rules",
-    "setup": "cd client && npm install && cd ../functions && npm install"
+    "setup": "cd client && npm install --legacy-peer-deps && cd ../functions && npm install"
   }
 }
