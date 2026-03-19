@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const QRCode = require('qrcode');
 const admin = require('firebase-admin');
 const { generateTicketPDF } = require('./tickets');
@@ -11,14 +11,14 @@ router.get('/config', async (req, res) => {
     const doc = await admin.firestore().collection('config').doc('email').get();
     if (!doc.exists) {
       return res.json({
-        smtp_host: '', smtp_port: 587, smtp_secure: false,
-        smtp_user: '', smtp_pass: '',
-        from_name: 'German Finance Dinner', from_email: '', reply_to: 'participants@finance-network.co'
+        api_key: '',
+        from_name: 'German Finance Dinner',
+        from_email: '',
+        reply_to: 'participants@finance-network.co'
       });
     }
     const config = doc.data();
-    // Mask password in response
-    if (config.smtp_pass) config.smtp_pass = '••••••••';
+    if (config.api_key) config.api_key = '••••••••';
     res.json(config);
   } catch (err) {
     console.error('Get email config error:', err);
@@ -28,23 +28,19 @@ router.get('/config', async (req, res) => {
 
 // Save email config
 router.put('/config', async (req, res) => {
-  const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, from_name, from_email, reply_to } = req.body;
+  const { api_key, from_name, from_email, reply_to } = req.body;
 
   try {
     const updateData = {
-      smtp_host: smtp_host || '',
-      smtp_port: smtp_port || 587,
-      smtp_secure: !!smtp_secure,
-      smtp_user: smtp_user || '',
       from_name: from_name || 'German Finance Dinner',
       from_email: from_email || '',
       reply_to: reply_to || 'participants@finance-network.co',
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    // Only update password if it's not the masked value
-    if (smtp_pass && smtp_pass !== '••••••••') {
-      updateData.smtp_pass = smtp_pass;
+    // Only update API key if it's not the masked value
+    if (api_key && api_key !== '••••••••') {
+      updateData.api_key = api_key;
     }
 
     await admin.firestore().collection('config').doc('email').set(updateData, { merge: true });
@@ -55,12 +51,19 @@ router.put('/config', async (req, res) => {
   }
 });
 
-// Test SMTP connection
+// Test Resend connection
 router.post('/test', async (req, res) => {
   try {
-    const transporter = await getTransporter();
-    await transporter.verify();
-    res.json({ success: true, message: 'SMTP connection successful' });
+    const resend = await getResendClient();
+    // Send a test request to verify the API key works
+    const { data, error } = await resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to: 'delivered@resend.dev',
+      subject: 'GFD Connection Test',
+      text: 'This is a connection test.'
+    });
+    if (error) throw new Error(error.message);
+    res.json({ success: true, message: 'Resend-Verbindung erfolgreich!' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -123,12 +126,10 @@ router.post('/send-all', async (req, res) => {
   const db = admin.firestore();
 
   try {
-    // Get all participants who haven't received tickets and are student or executive
     const snapshot = await db.collection('participants')
       .where('ticketSent', '!=', true)
       .get();
 
-    // Filter for student/executive roles (Firestore only allows one inequality filter)
     const participants = snapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(p => p.role === 'student' || p.role === 'executive');
@@ -137,7 +138,6 @@ router.post('/send-all', async (req, res) => {
       return res.json({ success: true, sent: 0, failed: 0, total: 0, errors: [] });
     }
 
-    // Pre-fetch event, table, and seat data for enrichment
     const eventCache = {};
     const tableCache = {};
     const seatCache = {};
@@ -148,7 +148,6 @@ router.post('/send-all', async (req, res) => {
 
     for (const participant of participants) {
       try {
-        // Enrich with event data
         if (participant.eventId && !eventCache[participant.eventId]) {
           const eventDoc = await db.collection('events').doc(participant.eventId).get();
           if (eventDoc.exists) eventCache[participant.eventId] = eventDoc.data();
@@ -160,7 +159,6 @@ router.post('/send-all', async (req, res) => {
           participant.eventLocation = ev.location;
         }
 
-        // Enrich with table data
         if (participant.tableId && !tableCache[participant.tableId]) {
           const tableDoc = await db.collection('tables').doc(participant.tableId).get();
           if (tableDoc.exists) tableCache[participant.tableId] = tableDoc.data();
@@ -169,7 +167,6 @@ router.post('/send-all', async (req, res) => {
           participant.tableNumber = tableCache[participant.tableId].tableNumber;
         }
 
-        // Enrich with seat data
         if (participant.seatId && !seatCache[participant.seatId]) {
           const seatDoc = await db.collection('seats').doc(participant.seatId).get();
           if (seatDoc.exists) seatCache[participant.seatId] = seatDoc.data();
@@ -202,34 +199,23 @@ router.post('/send-all', async (req, res) => {
   }
 });
 
-async function getTransporter() {
+async function getResendClient() {
   const doc = await admin.firestore().collection('config').doc('email').get();
-  if (!doc.exists || !doc.data().smtp_host) {
-    throw new Error('SMTP not configured. Please configure email settings first.');
+  if (!doc.exists || !doc.data().api_key) {
+    throw new Error('Resend API Key nicht konfiguriert. Bitte in den Einstellungen hinterlegen.');
   }
-
-  const config = doc.data();
-
-  return nodemailer.createTransport({
-    host: config.smtp_host,
-    port: config.smtp_port || 587,
-    secure: !!config.smtp_secure,
-    auth: {
-      user: config.smtp_user,
-      pass: config.smtp_pass
-    }
-  });
+  return new Resend(doc.data().api_key);
 }
 
 async function sendTicketEmail(participant) {
   const configDoc = await admin.firestore().collection('config').doc('email').get();
   const config = configDoc.exists ? configDoc.data() : {};
-  const transporter = await getTransporter();
+  const resend = await getResendClient();
 
   // Generate PDF ticket
   const pdfBuffer = await generateTicketPDF(participant);
 
-  // Generate QR code for inline email display
+  // Generate QR code
   const qrBuffer = await QRCode.toBuffer(participant.ticketCode, {
     width: 200, margin: 1, color: { dark: '#ffffff', light: '#000000' }
   });
@@ -277,43 +263,43 @@ async function sendTicketEmail(participant) {
 
 <!-- Header -->
 <tr><td align="center" style="padding:40px 40px 8px;">
-<p style="margin:0;font-size:13px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#4a8af4;">YOUR TICKET IS CONFIRMED</p>
+<p style="margin:0;font-size:13px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#4a8af4;"><span class="gs"><span class="gd">YOUR TICKET IS CONFIRMED</span></span></p>
 </td></tr>
 
 <!-- Greeting & Body -->
 <tr><td style="padding:20px 40px 0;">
-<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#ffffff;">Dear ${participant.firstName},</p>
-<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#d4d4d8;">We are pleased to confirm your participation at the <strong style="color:#ffffff;">${participant.eventName || 'German Finance Dinner 2026'}</strong>. Your personal ticket is attached to this email as a PDF.</p>
-<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#d4d4d8;">Please present the QR code below or on your attached ticket at the entrance for check-in.</p>
+<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#ffffff;"><span class="gs"><span class="gd">Dear ${participant.firstName},</span></span></p>
+<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#d4d4d8;"><span class="gs"><span class="gd">We are pleased to confirm your participation at the <strong style="color:#ffffff;">${participant.eventName || 'German Finance Dinner 2026'}</strong>. Your personal ticket is attached to this email as a PDF.</span></span></p>
+<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#d4d4d8;"><span class="gs"><span class="gd">Please present the QR code below or on your attached ticket at the entrance for check-in.</span></span></p>
 </td></tr>
 
 <!-- Info Card -->
 <tr><td style="padding:8px 40px 0;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
-<td style="padding:24px 28px;background-color:#0c0c0f;border:1px solid #1a1a2e;border-radius:8px;">
+<td style="padding:24px 28px;background-color:#0c0c0f;background-image:linear-gradient(#0c0c0f,#0c0c0f);border:1px solid #1a1a2e;border-radius:8px;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
-<td style="width:4px;background-color:#00379e;border-radius:2px;" width="4">&nbsp;</td>
+<td style="width:4px;background-color:#00379e;background-image:linear-gradient(#00379e,#00379e);border-radius:2px;" width="4">&nbsp;</td>
 <td style="padding-left:20px;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
 <tr>
   <td style="padding-bottom:8px;">
-    <p style="margin:0;font-size:12px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;">EVENT DETAILS</p>
+    <p style="margin:0;font-size:12px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;"><span class="gs"><span class="gd">EVENT DETAILS</span></span></p>
   </td>
 </tr>
 <tr>
   <td style="padding:4px 0;">
-    <p style="margin:0;font-size:15px;line-height:24px;color:#ffffff;font-weight:600;">${participant.eventName || 'German Finance Dinner 2026'}</p>
+    <p style="margin:0;font-size:15px;line-height:24px;color:#ffffff;font-weight:600;"><span class="gs"><span class="gd">${participant.eventName || 'German Finance Dinner 2026'}</span></span></p>
   </td>
 </tr>
 <tr>
   <td style="padding:4px 0;">
-    <p style="margin:0;font-size:15px;line-height:24px;color:#a1a1aa;">${[participant.eventDate, participant.eventLocation].filter(Boolean).join(' &bull; ')}</p>
+    <p style="margin:0;font-size:15px;line-height:24px;color:#a1a1aa;"><span class="gs"><span class="gd">${[participant.eventDate, participant.eventLocation].filter(Boolean).join(' &bull; ')}</span></span></p>
   </td>
 </tr>
 ${tableInfo}
 <tr>
   <td style="padding:8px 0 0;">
-    <span style="display:inline-block;padding:4px 12px;font-size:12px;font-weight:600;color:#ffffff;background-color:${roleBadgeColor};border-radius:12px;">${roleLabel}</span>
+    <span style="display:inline-block;padding:4px 12px;font-size:12px;font-weight:600;color:#ffffff;background-color:${roleBadgeColor};border-radius:12px;"><span class="gs"><span class="gd">${roleLabel}</span></span></span>
   </td>
 </tr>
 </table>
@@ -323,28 +309,28 @@ ${tableInfo}
 
 <!-- QR Code -->
 <tr><td align="center" style="padding:28px 40px 0;">
-<p style="margin:0 0 12px;font-size:12px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;">YOUR QR CODE</p>
+<p style="margin:0 0 12px;font-size:12px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;"><span class="gs"><span class="gd">YOUR QR CODE</span></span></p>
 <img src="cid:qrcode" width="180" height="180" alt="QR Code" style="display:block;margin:0 auto;">
 </td></tr>
 
 <!-- QR instruction -->
 <tr><td align="center" style="padding:12px 40px 0;">
-<p style="margin:0;font-size:14px;line-height:22px;color:#a1a1aa;">Show this QR code at the entrance for check-in</p>
+<p style="margin:0;font-size:14px;line-height:22px;color:#a1a1aa;"><span class="gs"><span class="gd">Show this QR code at the entrance for check-in</span></span></p>
 </td></tr>
 
 <!-- Ticket Code -->
 <tr><td align="center" style="padding:12px 40px 0;">
-<p style="margin:0;font-size:14px;font-weight:600;letter-spacing:2px;color:#4a8af4;">${participant.ticketCode}</p>
+<p style="margin:0;font-size:14px;font-weight:600;letter-spacing:2px;color:#4a8af4;"><span class="gs"><span class="gd">${participant.ticketCode}</span></span></p>
 </td></tr>
 
 <!-- Contact -->
 <tr><td style="padding:28px 40px 0;">
-<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#d4d4d8;">If you have any questions, please contact us at <a href="mailto:participants@finance-network.co" style="color:#4a8af4;text-decoration:none;">participants@finance-network.co</a>.</p>
+<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#d4d4d8;"><span class="gs"><span class="gd">If you have any questions, please contact us at <a href="mailto:participants@finance-network.co" style="color:#4a8af4;text-decoration:none;">participants@finance-network.co</a>.</span></span></p>
 </td></tr>
 
 <!-- Sign off -->
 <tr><td style="padding:8px 40px 40px;">
-<p style="margin:0;font-size:16px;line-height:26px;color:#ffffff;">Best regards,<br><strong>Your German Finance Dinner Team</strong></p>
+<p style="margin:0;font-size:16px;line-height:26px;color:#ffffff;"><span class="gs"><span class="gd">Best regards,<br><strong>Your German Finance Dinner Team</strong></span></span></p>
 </td></tr>
 
 <!-- Footer Separator -->
@@ -354,9 +340,9 @@ ${tableInfo}
 
 <!-- Footer -->
 <tr><td align="center" style="padding:28px 40px 12px;">
-<p style="margin:0 0 12px;font-size:13px;line-height:20px;color:#52525b;">Finance Network e.V.</p>
-<p style="margin:0 0 12px;font-size:12px;line-height:20px;color:#3f3f46;"><a href="https://www.linkedin.com/company/german-finance-dinner" style="color:#52525b;text-decoration:none;">LinkedIn</a> &middot; <a href="https://www.instagram.com/germanfinancedinner/" style="color:#52525b;text-decoration:none;">Instagram</a></p>
-<p style="margin:0;font-size:11px;line-height:18px;color:#3f3f46;"><a href="https://www.finance-network.co/imprint" style="color:#3f3f46;text-decoration:none;">Imprint</a> &middot; <a href="https://www.finance-network.co/privacy-policy" style="color:#3f3f46;text-decoration:none;">Privacy Policy</a> &middot; <a href="https://www.finance-network.co/terms-and-conditions" style="color:#3f3f46;text-decoration:none;">Terms &amp; Conditions</a></p>
+<p style="margin:0 0 12px;font-size:13px;line-height:20px;color:#52525b;"><span class="gs"><span class="gd">Finance Network e.V.</span></span></p>
+<p style="margin:0 0 12px;font-size:12px;line-height:20px;color:#3f3f46;"><a href="https://www.linkedin.com/company/german-finance-dinner" style="color:#52525b;text-decoration:none;"><span class="gs"><span class="gd">LinkedIn</span></span></a> &middot; <a href="https://www.instagram.com/germanfinancedinner/" style="color:#52525b;text-decoration:none;"><span class="gs"><span class="gd">Instagram</span></span></a></p>
+<p style="margin:0;font-size:11px;line-height:18px;color:#3f3f46;"><a href="https://www.finance-network.co/imprint" style="color:#3f3f46;text-decoration:none;"><span class="gs"><span class="gd">Imprint</span></span></a> &middot; <a href="https://www.finance-network.co/privacy-policy" style="color:#3f3f46;text-decoration:none;"><span class="gs"><span class="gd">Privacy Policy</span></span></a> &middot; <a href="https://cdn.prod.website-files.com/672109247d0292f31a4e14f6/699afb9cdb0af633bc525f6a_gfd-terms-conditions.pdf" style="color:#3f3f46;text-decoration:none;"><span class="gs"><span class="gd">Terms &amp; Conditions</span></span></a></p>
 </td></tr>
 
 <!-- Bottom Spacer -->
@@ -365,26 +351,32 @@ ${tableInfo}
 </table></td></tr></table>
 </body></html>`;
 
-  await transporter.sendMail({
-    from: `"${config.from_name || 'German Finance Dinner'}" <${config.from_email || 'noreply@finance-network.co'}>`,
+  const fromAddress = config.from_email
+    ? `${config.from_name || 'German Finance Dinner'} <${config.from_email}>`
+    : 'German Finance Dinner <noreply@finance-network.co>';
+
+  const { error } = await resend.emails.send({
+    from: fromAddress,
     replyTo: config.reply_to || 'participants@finance-network.co',
-    to: participant.email,
+    to: [participant.email],
     subject: `Your Ticket – ${participant.eventName || 'German Finance Dinner 2026'}`,
     html,
     attachments: [
       {
         filename: `ticket-${participant.ticketCode}.pdf`,
-        content: pdfBuffer,
+        content: pdfBuffer.toString('base64'),
         contentType: 'application/pdf'
       },
       {
         filename: 'qrcode.png',
-        content: qrBuffer,
+        content: qrBuffer.toString('base64'),
         contentType: 'image/png',
-        cid: 'qrcode'
+        headers: { 'Content-ID': '<qrcode>' }
       }
     ]
   });
+
+  if (error) throw new Error(error.message);
 }
 
 module.exports = router;

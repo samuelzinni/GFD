@@ -17,8 +17,7 @@ export default function Settings() {
   const [eventForm, setEventForm] = useState({ name: '', date: '', location: '', description: '' });
   const [initStatus, setInitStatus] = useState('');
   const [emailConfig, setEmailConfig] = useState({
-    smtp_host: '', smtp_port: 587, smtp_secure: false,
-    smtp_user: '', smtp_pass: '',
+    api_key: '',
     from_name: 'German Finance Dinner', from_email: '', reply_to: 'participants@finance-network.co'
   });
   const [emailSaving, setEmailSaving] = useState(false);
@@ -314,40 +313,26 @@ export default function Settings() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 gap-4 mb-4">
           <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">SMTP Host</label>
-            <input className="gfd-input" placeholder="smtp.example.com" value={emailConfig.smtp_host || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_host: e.target.value })} />
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Resend API Key</label>
+            <input className="gfd-input" type="password" placeholder="re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" value={emailConfig.api_key || ''} onChange={e => setEmailConfig({ ...emailConfig, api_key: e.target.value })} />
+            <p className="text-xs text-[#3f3f46] mt-1">Von <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-[#4a8af4] hover:underline">resend.com/api-keys</a></p>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">SMTP Port</label>
-            <input className="gfd-input" type="number" placeholder="587" value={emailConfig.smtp_port || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_port: parseInt(e.target.value) || 587 })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Benutzername</label>
-            <input className="gfd-input" placeholder="user@example.com" value={emailConfig.smtp_user || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_user: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Passwort</label>
-            <input className="gfd-input" type="password" placeholder="••••••••" value={emailConfig.smtp_pass || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_pass: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absendername</label>
-            <input className="gfd-input" placeholder="German Finance Dinner" value={emailConfig.from_name || ''} onChange={e => setEmailConfig({ ...emailConfig, from_name: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absender-E-Mail</label>
-            <input className="gfd-input" type="email" placeholder="noreply@example.com" value={emailConfig.from_email || ''} onChange={e => setEmailConfig({ ...emailConfig, from_email: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Antwort-an (Reply-To)</label>
-            <input className="gfd-input" type="email" placeholder="participants@finance-network.co" value={emailConfig.reply_to || ''} onChange={e => setEmailConfig({ ...emailConfig, reply_to: e.target.value })} />
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-[#a1a1aa]">
-              <input type="checkbox" className="w-4 h-4 rounded border-[#1a1a2e] bg-[#0c0c0f] accent-[#4a8af4]" checked={!!emailConfig.smtp_secure} onChange={e => setEmailConfig({ ...emailConfig, smtp_secure: e.target.checked })} />
-              SSL/TLS (Secure)
-            </label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absendername</label>
+              <input className="gfd-input" placeholder="German Finance Dinner" value={emailConfig.from_name || ''} onChange={e => setEmailConfig({ ...emailConfig, from_name: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absender-E-Mail</label>
+              <input className="gfd-input" type="email" placeholder="noreply@finance-network.co" value={emailConfig.from_email || ''} onChange={e => setEmailConfig({ ...emailConfig, from_email: e.target.value })} />
+              <p className="text-xs text-[#3f3f46] mt-1">Domain muss in Resend verifiziert sein</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Antwort-an (Reply-To)</label>
+              <input className="gfd-input" type="email" placeholder="participants@finance-network.co" value={emailConfig.reply_to || ''} onChange={e => setEmailConfig({ ...emailConfig, reply_to: e.target.value })} />
+            </div>
           </div>
         </div>
 
