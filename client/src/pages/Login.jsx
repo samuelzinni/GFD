@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,10 +15,10 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(username, password);
+      await login(email, password);
       navigate('/');
-    } catch {
-      setError('Ungültige Anmeldedaten');
+    } catch (err) {
+      setError('Ungültige Anmeldedaten. Überprüfe E-Mail und Passwort.');
     } finally {
       setLoading(false);
     }
@@ -42,14 +42,15 @@ export default function Login() {
           )}
 
           <div className="mb-4">
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-2">Benutzername</label>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-2">E-Mail</label>
             <input
-              type="text"
+              type="email"
               className="gfd-input"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
+              value={email}
+              onChange={e => setEmail(e.target.value)}
               required
               autoFocus
+              placeholder="name@example.com"
             />
           </div>
 

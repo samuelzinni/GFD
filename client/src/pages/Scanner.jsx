@@ -1,35 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import api from '../lib/api';
-import socket from '../lib/socket';
-import { Camera, CameraOff, CheckCircle, XCircle, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Camera, CameraOff, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 
 export default function Scanner() {
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
   const [recentScans, setRecentScans] = useState([]);
   const [manualCode, setManualCode] = useState('');
-  const scannerRef = useRef(null);
+  const [error, setError] = useState(null);
   const html5QrRef = useRef(null);
+  const processingRef = useRef(false);
 
   useEffect(() => {
-    socket.connect();
-    socket.emit('join-scanner');
-
-    return () => {
-      stopScanning();
-    };
+    return () => { stopScanning(); };
   }, []);
 
   const startScanning = async () => {
     setError(null);
     setResult(null);
-
     try {
       const html5Qr = new Html5Qrcode('qr-reader');
       html5QrRef.current = html5Qr;
-
       await html5Qr.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
@@ -50,23 +42,20 @@ export default function Scanner() {
   };
 
   const onScanSuccess = async (decodedText) => {
-    // Prevent duplicate scans
-    if (result?.processing) return;
-    setResult({ processing: true });
+    if (processingRef.current) return;
+    processingRef.current = true;
 
-    // Pause scanning temporarily
     if (html5QrRef.current?.isScanning) {
       await html5QrRef.current.pause();
     }
 
     await processCode(decodedText);
 
-    // Resume after 3 seconds
     setTimeout(() => {
-      if (html5QrRef.current?.getState() === 3) { // PAUSED state
+      if (html5QrRef.current?.getState() === 3) {
         html5QrRef.current.resume();
       }
-      setResult(null);
+      processingRef.current = false;
     }, 3000);
   };
 
@@ -76,11 +65,8 @@ export default function Scanner() {
       setResult(res.data);
       setRecentScans(prev => [{ ...res.data, timestamp: new Date() }, ...prev.slice(0, 19)]);
     } catch (err) {
-      if (err.response?.status === 404) {
-        setResult({ valid: false, message: 'Ungültiger QR-Code / Ticket nicht gefunden' });
-      } else {
-        setResult({ valid: false, message: 'Fehler bei der Verarbeitung' });
-      }
+      const msg = err.response?.status === 404 ? 'Ungültiger QR-Code / Ticket nicht gefunden' : 'Fehler bei der Verarbeitung';
+      setResult({ valid: false, message: msg });
     }
   };
 
@@ -97,24 +83,18 @@ export default function Scanner() {
         <p className="text-sm text-[#64748b]">Scanne Tickets zum Einchecken</p>
       </div>
 
-      {/* Scanner area */}
       <div className="gfd-card p-4 mb-4">
         <div id="qr-reader" className="w-full rounded-lg overflow-hidden bg-[#0c0c0f] mb-4" style={{ minHeight: scanning ? '300px' : '0' }}></div>
-
+        {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
         <div className="flex gap-2">
           {!scanning ? (
-            <button className="gfd-btn w-full" onClick={startScanning}>
-              <Camera size={18} /> Kamera starten
-            </button>
+            <button className="gfd-btn w-full" onClick={startScanning}><Camera size={18} /> Kamera starten</button>
           ) : (
-            <button className="gfd-btn gfd-btn-outline w-full" onClick={stopScanning}>
-              <CameraOff size={18} /> Kamera stoppen
-            </button>
+            <button className="gfd-btn gfd-btn-outline w-full" onClick={stopScanning}><CameraOff size={18} /> Kamera stoppen</button>
           )}
         </div>
       </div>
 
-      {/* Manual input */}
       <div className="gfd-card p-4 mb-4">
         <h3 className="text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-2">Manuelle Eingabe</h3>
         <div className="flex gap-2">
@@ -129,12 +109,10 @@ export default function Scanner() {
         </div>
       </div>
 
-      {/* Scan result */}
-      {result && !result.processing && (
+      {result && (
         <div className={`gfd-card p-5 mb-4 animate-fade-in border-l-4 ${
           result.valid && !result.already_checked_in ? 'border-l-green-500' :
-          result.already_checked_in ? 'border-l-amber-500' :
-          'border-l-red-500'
+          result.already_checked_in ? 'border-l-amber-500' : 'border-l-red-500'
         }`}>
           <div className="flex items-center gap-3 mb-3">
             {result.valid && !result.already_checked_in ? (
@@ -147,32 +125,23 @@ export default function Scanner() {
             <div>
               <div className={`text-lg font-bold ${
                 result.valid && !result.already_checked_in ? 'text-green-400' :
-                result.already_checked_in ? 'text-amber-400' :
-                'text-red-400'
+                result.already_checked_in ? 'text-amber-400' : 'text-red-400'
               }`}>
                 {result.valid && !result.already_checked_in ? 'Erfolgreich eingecheckt!' :
-                 result.already_checked_in ? 'Bereits eingecheckt' :
-                 'Ungültig'}
+                 result.already_checked_in ? 'Bereits eingecheckt' : 'Ungültig'}
               </div>
               <div className="text-sm text-[#a1a1aa]">{result.message}</div>
             </div>
           </div>
-
           {result.participant && (
             <div className="bg-[#000] rounded-lg p-3 mt-2">
-              <div className="text-white font-medium">{result.participant.first_name} {result.participant.last_name}</div>
-              {result.participant.table_number && (
-                <div className="text-xs text-[#64748b] mt-1">
-                  Tisch {result.participant.table_number}{result.participant.seat_number ? `, Platz ${result.participant.seat_number}` : ''}
-                </div>
-              )}
-              <div className="text-xs text-[#52525b] mt-1 font-mono">{result.participant.ticket_code}</div>
+              <div className="text-white font-medium">{result.participant.firstName} {result.participant.lastName}</div>
+              <div className="text-xs text-[#52525b] mt-1 font-mono">{result.participant.ticketCode}</div>
             </div>
           )}
         </div>
       )}
 
-      {/* Recent scans */}
       {recentScans.length > 0 && (
         <div className="gfd-card p-4">
           <h3 className="text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-3">Letzte Scans</h3>
@@ -186,7 +155,7 @@ export default function Scanner() {
                     <XCircle size={14} className="text-red-400" />
                   )}
                   <span className="text-sm text-white">
-                    {scan.participant ? `${scan.participant.first_name} ${scan.participant.last_name}` : 'Ungültig'}
+                    {scan.participant ? `${scan.participant.firstName} ${scan.participant.lastName}` : 'Ungültig'}
                   </span>
                 </div>
                 <span className="text-xs text-[#52525b]">

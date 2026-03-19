@@ -1,25 +1,28 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Users, Plus, Trash2, Shield, ScanLine, Calendar } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { Users, Plus, Trash2, Shield, ScanLine, Calendar, Rocket } from 'lucide-react';
 
 export default function Settings() {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ username: '', password: '', display_name: '', role: 'scanner' });
+  const [form, setForm] = useState({ email: '', password: '', displayName: '', role: 'scanner' });
   const [event, setEvent] = useState(null);
   const [eventForm, setEventForm] = useState({ name: '', date: '', location: '', description: '' });
+  const [initStatus, setInitStatus] = useState('');
 
   useEffect(() => {
-    loadUsers();
-    loadEvent();
-  }, []);
+    // Realtime users list
+    const unsub = onSnapshot(query(collection(db, 'users')), (snapshot) => {
+      setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-  const loadUsers = async () => {
-    const res = await api.get('/auth/users');
-    setUsers(res.data);
-  };
+    loadEvent();
+    return () => unsub();
+  }, []);
 
   const loadEvent = async () => {
     const res = await api.get('/events');
@@ -29,24 +32,29 @@ export default function Settings() {
     }
   };
 
+  const initializeEvent = async () => {
+    setInitStatus('Initialisiere...');
+    try {
+      const res = await api.post('/setup/init');
+      setInitStatus(res.data.message);
+      loadEvent();
+    } catch (err) {
+      setInitStatus(err.response?.data?.error || 'Fehler');
+    }
+  };
+
   const addUser = async () => {
     try {
-      await api.post('/auth/users', form);
-      setForm({ username: '', password: '', display_name: '', role: 'scanner' });
+      await api.post('/setup/users', form);
+      setForm({ email: '', password: '', displayName: '', role: 'scanner' });
       setShowAdd(false);
-      loadUsers();
     } catch (err) {
       alert(err.response?.data?.error || 'Fehler beim Erstellen');
     }
   };
 
-  const deleteUser = async (id) => {
-    if (!confirm('Benutzer wirklich löschen?')) return;
-    await api.delete(`/auth/users/${id}`);
-    loadUsers();
-  };
-
   const updateEvent = async () => {
+    if (!event) return;
     await api.put(`/events/${event.id}`, eventForm);
     alert('Event aktualisiert');
   };
@@ -62,31 +70,45 @@ export default function Settings() {
         <p className="text-sm text-[#64748b]">Event- und Benutzerverwaltung</p>
       </div>
 
-      {/* Event settings */}
-      <div className="gfd-card p-6 mb-6">
-        <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-          <Calendar size={16} className="text-[#4a8af4]" /> Event-Details
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Name</label>
-            <input className="gfd-input" value={eventForm.name || ''} onChange={e => setEventForm({ ...eventForm, name: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Datum</label>
-            <input className="gfd-input" type="date" value={eventForm.date || ''} onChange={e => setEventForm({ ...eventForm, date: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Ort</label>
-            <input className="gfd-input" value={eventForm.location || ''} onChange={e => setEventForm({ ...eventForm, location: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Beschreibung</label>
-            <input className="gfd-input" value={eventForm.description || ''} onChange={e => setEventForm({ ...eventForm, description: e.target.value })} />
-          </div>
+      {/* Initialize Event */}
+      {!event && (
+        <div className="gfd-card p-6 mb-6">
+          <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Rocket size={16} className="text-[#4a8af4]" /> Event initialisieren
+          </h2>
+          <p className="text-sm text-[#a1a1aa] mb-4">Erstellt das Event mit 12 Tischen und der Sitzordnung (S-S-E-S-S-E-S-S-E).</p>
+          {initStatus && <p className="text-sm text-[#4a8af4] mb-3">{initStatus}</p>}
+          <button className="gfd-btn" onClick={initializeEvent}>Event + Tische anlegen</button>
         </div>
-        <button className="gfd-btn" onClick={updateEvent}>Speichern</button>
-      </div>
+      )}
+
+      {/* Event settings */}
+      {event && (
+        <div className="gfd-card p-6 mb-6">
+          <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Calendar size={16} className="text-[#4a8af4]" /> Event-Details
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Name</label>
+              <input className="gfd-input" value={eventForm.name || ''} onChange={e => setEventForm({ ...eventForm, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Datum</label>
+              <input className="gfd-input" type="date" value={eventForm.date || ''} onChange={e => setEventForm({ ...eventForm, date: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Ort</label>
+              <input className="gfd-input" value={eventForm.location || ''} onChange={e => setEventForm({ ...eventForm, location: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Beschreibung</label>
+              <input className="gfd-input" value={eventForm.description || ''} onChange={e => setEventForm({ ...eventForm, description: e.target.value })} />
+            </div>
+          </div>
+          <button className="gfd-btn" onClick={updateEvent}>Speichern</button>
+        </div>
+      )}
 
       {/* User management */}
       <div className="gfd-card p-6">
@@ -102,9 +124,9 @@ export default function Settings() {
         {showAdd && (
           <div className="p-4 bg-[#000] rounded-lg mb-4 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <input className="gfd-input" placeholder="Benutzername" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} />
-              <input className="gfd-input" placeholder="Passwort" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-              <input className="gfd-input" placeholder="Anzeigename" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} />
+              <input className="gfd-input" placeholder="E-Mail" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+              <input className="gfd-input" placeholder="Passwort (min. 6 Zeichen)" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+              <input className="gfd-input" placeholder="Anzeigename" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} />
               <select className="gfd-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
                 <option value="scanner">Scanner</option>
                 <option value="admin">Admin</option>
@@ -123,15 +145,10 @@ export default function Settings() {
               <div className="flex items-center gap-3">
                 {u.role === 'admin' ? <Shield size={16} className="text-[#4a8af4]" /> : <ScanLine size={16} className="text-[#64748b]" />}
                 <div>
-                  <div className="text-sm text-white font-medium">{u.display_name}</div>
-                  <div className="text-xs text-[#52525b]">@{u.username} · {u.role}</div>
+                  <div className="text-sm text-white font-medium">{u.displayName}</div>
+                  <div className="text-xs text-[#52525b]">{u.email} · {u.role}</div>
                 </div>
               </div>
-              {u.username !== 'admin' && (
-                <button className="text-[#64748b] hover:text-red-400 transition-colors" onClick={() => deleteUser(u.id)}>
-                  <Trash2 size={16} />
-                </button>
-              )}
             </div>
           ))}
         </div>

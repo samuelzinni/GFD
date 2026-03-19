@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
-import socket from '../lib/socket';
+import { db } from '../lib/firebase';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { Users, UserCheck, Ticket, Grid3X3, Clock, TrendingUp } from 'lucide-react';
 
 export default function Dashboard() {
@@ -8,40 +9,43 @@ export default function Dashboard() {
   const [recentCheckins, setRecentCheckins] = useState([]);
   const [eventId, setEventId] = useState(null);
 
-  const loadData = async () => {
-    const evRes = await api.get('/events');
-    if (evRes.data.length > 0) {
-      const eid = evRes.data[0].id;
-      setEventId(eid);
-      const [statsRes, checkinsRes] = await Promise.all([
-        api.get(`/dashboard/stats?event_id=${eid}`),
-        api.get('/dashboard/recent-checkins?limit=15')
-      ]);
-      setStats(statsRes.data);
-      setRecentCheckins(checkinsRes.data);
-    }
+  const loadStats = async (eid) => {
+    try {
+      const res = await api.get(`/dashboard/stats?event_id=${eid}`);
+      setStats(res.data);
+    } catch {}
   };
 
   useEffect(() => {
-    loadData();
-    socket.connect();
-    socket.emit('join-dashboard');
+    let unsubParticipants = null;
+    let unsubCheckins = null;
 
-    const refresh = () => loadData();
-    socket.on('check-in', refresh);
-    socket.on('check-out', refresh);
-    socket.on('participant-added', refresh);
-    socket.on('participant-removed', refresh);
-    socket.on('participants-imported', refresh);
-    socket.on('ticket-sent', refresh);
+    const init = async () => {
+      const evRes = await api.get('/events');
+      if (evRes.data.length > 0) {
+        const eid = evRes.data[0].id;
+        setEventId(eid);
+        await loadStats(eid);
 
+        // Realtime listener on participants for live stats
+        const pQuery = query(collection(db, 'participants'), where('eventId', '==', eid));
+        unsubParticipants = onSnapshot(pQuery, () => {
+          loadStats(eid);
+        });
+
+        // Realtime listener on check-in log
+        const cQuery = query(collection(db, 'checkInLog'), orderBy('timestamp', 'desc'), limit(15));
+        unsubCheckins = onSnapshot(cQuery, (snapshot) => {
+          const checkins = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setRecentCheckins(checkins);
+        });
+      }
+    };
+
+    init();
     return () => {
-      socket.off('check-in', refresh);
-      socket.off('check-out', refresh);
-      socket.off('participant-added', refresh);
-      socket.off('participant-removed', refresh);
-      socket.off('participants-imported', refresh);
-      socket.off('ticket-sent', refresh);
+      if (unsubParticipants) unsubParticipants();
+      if (unsubCheckins) unsubCheckins();
     };
   }, []);
 
@@ -49,14 +53,13 @@ export default function Dashboard() {
 
   const statCards = [
     { label: 'Teilnehmer', value: stats.totalParticipants, icon: Users, sub: `${stats.totalStudents} Studenten · ${stats.totalExecutives} Executives` },
-    { label: 'Eingecheckt', value: stats.checkedIn, icon: UserCheck, sub: `${stats.notCheckedIn} ausstehend`, highlight: true },
+    { label: 'Eingecheckt', value: stats.checkedIn, icon: UserCheck, sub: `${stats.notCheckedIn} ausstehend` },
     { label: 'Tickets gesendet', value: stats.ticketsSent, icon: Ticket, sub: `${stats.ticketsNotSent} ausstehend` },
     { label: 'Tische', value: stats.tablesCount, icon: Grid3X3, sub: `${stats.seatedParticipants} Plätze belegt` },
   ];
 
   const checkinPercent = stats.totalParticipants > 0
-    ? Math.round((stats.checkedIn / stats.totalParticipants) * 100)
-    : 0;
+    ? Math.round((stats.checkedIn / stats.totalParticipants) * 100) : 0;
 
   return (
     <div className="animate-fade-in">
@@ -71,7 +74,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {statCards.map((card) => {
           const Icon = card.icon;
@@ -88,20 +90,15 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Check-in progress */}
       <div className="gfd-card p-5 mb-8">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-semibold text-white flex items-center gap-2">
-            <TrendingUp size={16} className="text-[#4a8af4]" />
-            Check-in Fortschritt
+            <TrendingUp size={16} className="text-[#4a8af4]" /> Check-in Fortschritt
           </span>
           <span className="text-sm font-bold text-[#4a8af4]">{checkinPercent}%</span>
         </div>
         <div className="w-full h-3 bg-[#1a1a2e] rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-[#00379e] to-[#2563eb] rounded-full transition-all duration-500"
-            style={{ width: `${checkinPercent}%` }}
-          ></div>
+          <div className="h-full bg-gradient-to-r from-[#00379e] to-[#2563eb] rounded-full transition-all duration-500" style={{ width: `${checkinPercent}%` }}></div>
         </div>
         <div className="flex justify-between mt-2 text-xs text-[#52525b]">
           <span>{stats.checkedIn} eingecheckt</span>
@@ -109,11 +106,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Recent check-ins */}
       <div className="gfd-card p-5">
         <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-          <Clock size={16} className="text-[#4a8af4]" />
-          Letzte Check-ins
+          <Clock size={16} className="text-[#4a8af4]" /> Letzte Check-ins
         </h2>
         {recentCheckins.length === 0 ? (
           <p className="text-sm text-[#52525b]">Noch keine Check-ins</p>
@@ -126,18 +121,15 @@ export default function Dashboard() {
                     {ci.action === 'check_in' ? 'IN' : 'OUT'}
                   </span>
                   <div>
-                    <span className="text-sm text-white font-medium">{ci.first_name} {ci.last_name}</span>
-                    {ci.table_number && (
-                      <span className="text-xs text-[#52525b] ml-2">Tisch {ci.table_number}</span>
-                    )}
+                    <span className="text-sm text-white font-medium">{ci.firstName} {ci.lastName}</span>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-xs text-[#52525b]">
-                    {new Date(ci.timestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                    {ci.timestamp?.toDate ? ci.timestamp.toDate().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''}
                   </div>
-                  {ci.scanned_by_name && (
-                    <div className="text-xs text-[#3f3f46]">von {ci.scanned_by_name}</div>
+                  {ci.scannedByName && (
+                    <div className="text-xs text-[#3f3f46]">von {ci.scannedByName}</div>
                   )}
                 </div>
               </div>

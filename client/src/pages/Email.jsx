@@ -4,10 +4,10 @@ import { Mail, Send, Settings, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function Email() {
   const [config, setConfig] = useState({
-    smtp_host: '', smtp_port: 587, smtp_secure: false,
-    smtp_user: '', smtp_pass: '',
-    from_name: 'German Finance Dinner', from_email: 'noreply@finance-network.co',
-    reply_to: 'participants@finance-network.co'
+    smtpHost: '', smtpPort: 587, smtpSecure: false,
+    smtpUser: '', smtpPass: '',
+    fromName: 'German Finance Dinner', fromEmail: 'noreply@finance-network.co',
+    replyTo: 'participants@finance-network.co'
   });
   const [testStatus, setTestStatus] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -55,7 +55,7 @@ export default function Email() {
 
   const sendAll = async () => {
     if (!confirm('Tickets an alle Studenten senden, die noch kein Ticket erhalten haben?')) return;
-    setSendProgress({ sent: 0, total: '...', sending: true });
+    setSendProgress({ sending: true });
     try {
       const res = await api.post('/email/send-all', { event_id: eventId });
       setSendProgress({ sent: res.data.sent, failed: res.data.failed, total: res.data.total, sending: false });
@@ -71,7 +71,6 @@ export default function Email() {
         <p className="text-sm text-[#64748b]">SMTP-Einstellungen für den Ticketversand</p>
       </div>
 
-      {/* SMTP Config */}
       <div className="gfd-card p-6 mb-6">
         <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
           <Settings size={16} className="text-[#4a8af4]" /> SMTP-Server
@@ -80,19 +79,19 @@ export default function Email() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">SMTP Host</label>
-            <input className="gfd-input" placeholder="smtp.example.com" value={config.smtp_host || ''} onChange={e => setConfig({ ...config, smtp_host: e.target.value })} />
+            <input className="gfd-input" placeholder="smtp.gmail.com" value={config.smtpHost || ''} onChange={e => setConfig({ ...config, smtpHost: e.target.value })} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Port</label>
-            <input className="gfd-input" type="number" value={config.smtp_port || 587} onChange={e => setConfig({ ...config, smtp_port: parseInt(e.target.value) })} />
+            <input className="gfd-input" type="number" value={config.smtpPort || 587} onChange={e => setConfig({ ...config, smtpPort: parseInt(e.target.value) })} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Benutzername</label>
-            <input className="gfd-input" value={config.smtp_user || ''} onChange={e => setConfig({ ...config, smtp_user: e.target.value })} />
+            <input className="gfd-input" value={config.smtpUser || ''} onChange={e => setConfig({ ...config, smtpUser: e.target.value })} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Passwort</label>
-            <input className="gfd-input" type="password" value={config.smtp_pass || ''} onChange={e => setConfig({ ...config, smtp_pass: e.target.value })} />
+            <input className="gfd-input" type="password" value={config.smtpPass || ''} onChange={e => setConfig({ ...config, smtpPass: e.target.value })} />
           </div>
         </div>
 
@@ -105,20 +104,20 @@ export default function Email() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absender Name</label>
-            <input className="gfd-input" value={config.from_name || ''} onChange={e => setConfig({ ...config, from_name: e.target.value })} />
+            <input className="gfd-input" value={config.fromName || ''} onChange={e => setConfig({ ...config, fromName: e.target.value })} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absender E-Mail</label>
-            <input className="gfd-input" value={config.from_email || ''} onChange={e => setConfig({ ...config, from_email: e.target.value })} />
+            <input className="gfd-input" value={config.fromEmail || ''} onChange={e => setConfig({ ...config, fromEmail: e.target.value })} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Antwort an</label>
-            <input className="gfd-input" value={config.reply_to || ''} onChange={e => setConfig({ ...config, reply_to: e.target.value })} />
+            <input className="gfd-input" value={config.replyTo || ''} onChange={e => setConfig({ ...config, replyTo: e.target.value })} />
           </div>
         </div>
 
         <label className="flex items-center gap-2 mb-4 cursor-pointer">
-          <input type="checkbox" checked={config.smtp_secure || false} onChange={e => setConfig({ ...config, smtp_secure: e.target.checked })} className="w-4 h-4" />
+          <input type="checkbox" checked={config.smtpSecure || false} onChange={e => setConfig({ ...config, smtpSecure: e.target.checked })} className="w-4 h-4" />
           <span className="text-sm text-[#a1a1aa]">SSL/TLS verwenden</span>
         </label>
 
@@ -132,39 +131,29 @@ export default function Email() {
         )}
 
         <div className="flex gap-2">
-          <button className="gfd-btn" onClick={saveConfig} disabled={saving}>
-            {saving ? 'Speichern...' : 'Speichern'}
-          </button>
-          <button className="gfd-btn gfd-btn-outline" onClick={testConnection}>
-            Verbindung testen
-          </button>
+          <button className="gfd-btn" onClick={saveConfig} disabled={saving}>{saving ? 'Speichern...' : 'Speichern'}</button>
+          <button className="gfd-btn gfd-btn-outline" onClick={testConnection}>Verbindung testen</button>
         </div>
       </div>
 
-      {/* Send tickets */}
       <div className="gfd-card p-6">
         <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
           <Send size={16} className="text-[#4a8af4]" /> Tickets versenden
         </h2>
-        <p className="text-sm text-[#a1a1aa] mb-4">
-          Sendet Ticket-E-Mails mit PDF-Anhang an alle Studenten, die noch kein Ticket erhalten haben.
-        </p>
+        <p className="text-sm text-[#a1a1aa] mb-4">Sendet Ticket-E-Mails mit PDF + QR-Code an alle Studenten, die noch kein Ticket erhalten haben.</p>
 
         {sendProgress && (
           <div className={`p-3 rounded-lg mb-4 text-sm ${
             sendProgress.error ? 'bg-red-500/10 text-red-400' :
-            sendProgress.sending ? 'bg-blue-500/10 text-[#4a8af4]' :
-            'bg-green-500/10 text-green-400'
+            sendProgress.sending ? 'bg-blue-500/10 text-[#4a8af4]' : 'bg-green-500/10 text-green-400'
           }`}>
             {sendProgress.error ? sendProgress.error :
-             sendProgress.sending ? `Sende Tickets...` :
+             sendProgress.sending ? 'Sende Tickets...' :
              `${sendProgress.sent} gesendet, ${sendProgress.failed} fehlgeschlagen (von ${sendProgress.total})`}
           </div>
         )}
 
-        <button className="gfd-btn" onClick={sendAll}>
-          <Send size={16} /> Alle ausstehenden Tickets senden
-        </button>
+        <button className="gfd-btn" onClick={sendAll}><Send size={16} /> Alle ausstehenden Tickets senden</button>
       </div>
     </div>
   );
