@@ -38,15 +38,8 @@
       "collectionGroup": "checkInLog",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "seats",
-      "queryScope": "COLLECTION",
-      "fields": [
         { "fieldPath": "eventId", "order": "ASCENDING" },
-        { "fieldPath": "seatNumber", "order": "ASCENDING" }
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     }
   ],
