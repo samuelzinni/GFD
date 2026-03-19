@@ -18,7 +18,7 @@ jobs:
         run: cd client && npm install --legacy-peer-deps
 
       - name: Build client
-        run: npm run build
+        run: cd client && npm run build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -27,10 +27,13 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
-      - name: Deploy to Firebase (Hosting + Firestore)
+      - name: Install functions dependencies
+        run: cd functions && npm install
+
+      - name: Deploy to Firebase
         uses: w9jds/firebase-action@master
         with:
-          args: deploy --only hosting,firestore
+          args: deploy --only hosting,functions,firestore
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
           PROJECT_ID: gfd-ticketing
