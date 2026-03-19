@@ -43,6 +43,7 @@ app.use('/api/scan', require('./routes/scan'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/import', require('./routes/import'));
 app.use('/api/setup', require('./routes/setup'));
+app.use('/api/email', authMiddleware, adminMiddleware, require('./routes/email'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

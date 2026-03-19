@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, getDocs, updateDoc, doc, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { User, UserCheck, Crown, ChevronUp, Plus } from 'lucide-react';
+import { User, UserCheck, Crown, ChevronUp, Plus, Pencil, Trash2 } from 'lucide-react';
+import api from '../lib/api';
 
 export default function Tables() {
   const [rawTables, setRawTables] = useState([]);
@@ -10,6 +11,8 @@ export default function Tables() {
   const [eventId, setEventId] = useState(null);
   const [expandedTable, setExpandedTable] = useState(null);
   const [assigning, setAssigning] = useState(null);
+  const [editingTable, setEditingTable] = useState(null);
+  const [editName, setEditName] = useState('');
 
   // Compute enriched tables from raw data
   const tables = useMemo(() => {
@@ -85,25 +88,31 @@ export default function Tables() {
 
   const addTable = async () => {
     if (!eventId) return;
-    const nextNumber = tables.length > 0 ? Math.max(...tables.map(t => t.tableNumber)) + 1 : 1;
-    const seatPattern = ['student', 'student', 'executive', 'student', 'student', 'executive', 'student', 'student', 'executive'];
+    try {
+      await api.post('/tables', { eventId });
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler beim Erstellen des Tisches');
+    }
+  };
 
-    const tableRef = await addDoc(collection(db, 'tables'), {
-      eventId,
-      tableNumber: nextNumber,
-      tableName: `Tisch ${nextNumber}`,
-      createdAt: serverTimestamp()
-    });
+  const renameTable = async (tableId) => {
+    if (!editName.trim()) return;
+    try {
+      await api.put(`/tables/${tableId}`, { tableName: editName.trim() });
+      setEditingTable(null);
+      setEditName('');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler beim Umbenennen');
+    }
+  };
 
-    for (let s = 1; s <= 9; s++) {
-      await addDoc(collection(db, 'seats'), {
-        tableId: tableRef.id,
-        eventId,
-        seatNumber: s,
-        seatType: seatPattern[s - 1],
-        participantId: null,
-        createdAt: serverTimestamp()
-      });
+  const deleteTable = async (tableId, tableName) => {
+    if (!confirm(`Tisch "${tableName}" wirklich löschen?`)) return;
+    try {
+      await api.delete(`/tables/${tableId}`);
+      if (expandedTable === tableId) setExpandedTable(null);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler beim Löschen');
     }
   };
 
@@ -129,27 +138,71 @@ export default function Tables() {
           const occupied = table.seats.filter(s => s.participantId).length;
           const checkedIn = table.seats.filter(s => s.checkedIn).length;
           return (
-            <button
+            <div
               key={table.id}
-              onClick={() => setExpandedTable(expandedTable === table.id ? null : table.id)}
-              className={`gfd-card p-4 text-center transition-all hover:border-[#00379e] cursor-pointer ${expandedTable === table.id ? 'border-[#00379e]' : ''}`}
+              className={`gfd-card p-4 text-center transition-all hover:border-[#00379e] cursor-pointer relative ${expandedTable === table.id ? 'border-[#00379e]' : ''}`}
             >
-              <div className="text-lg font-bold text-white mb-1">Tisch {table.tableNumber}</div>
-              <div className="flex justify-center gap-1 mb-2">
-                {table.seats.map(seat => (
-                  <div
-                    key={seat.id}
-                    className={`w-2.5 h-2.5 rounded-full ${
-                      seat.checkedIn ? 'bg-green-500' :
-                      seat.participantId ? (seat.seatType === 'executive' ? 'bg-amber-500' : 'bg-[#00379e]') :
-                      'bg-[#1a1a2e]'
-                    }`}
-                    title={seat.firstName ? `${seat.firstName} ${seat.lastName}` : `Platz ${seat.seatNumber} (${seat.seatType})`}
-                  />
-                ))}
+              <div className="absolute top-2 right-2 flex gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingTable(table.id);
+                    setEditName(table.tableName || `Tisch ${table.tableNumber}`);
+                  }}
+                  className="p-1 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors"
+                  title="Umbenennen"
+                >
+                  <Pencil size={12} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteTable(table.id, table.tableName || `Tisch ${table.tableNumber}`);
+                  }}
+                  className="p-1 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-red-400 transition-colors"
+                  title="Löschen"
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
-              <div className="text-xs text-[#52525b]">{occupied}/9 belegt · {checkedIn} da</div>
-            </button>
+              <div onClick={() => setExpandedTable(expandedTable === table.id ? null : table.id)}>
+                {editingTable === table.id ? (
+                  <div className="mb-1" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') renameTable(table.id);
+                        if (e.key === 'Escape') { setEditingTable(null); setEditName(''); }
+                      }}
+                      className="bg-[#0c0c0f] border border-[#1a1a2e] rounded px-2 py-1 text-sm text-white text-center w-full focus:border-[#00379e] outline-none"
+                      autoFocus
+                    />
+                    <div className="flex justify-center gap-1 mt-1">
+                      <button onClick={() => renameTable(table.id)} className="text-xs text-[#00379e] hover:text-white">OK</button>
+                      <button onClick={() => { setEditingTable(null); setEditName(''); }} className="text-xs text-[#64748b] hover:text-white">Abb.</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-lg font-bold text-white mb-1">{table.tableName || `Tisch ${table.tableNumber}`}</div>
+                )}
+                <div className="flex justify-center gap-1 mb-2">
+                  {table.seats.map(seat => (
+                    <div
+                      key={seat.id}
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        seat.checkedIn ? 'bg-green-500' :
+                        seat.participantId ? (seat.seatType === 'executive' ? 'bg-amber-500' : 'bg-[#00379e]') :
+                        'bg-[#1a1a2e]'
+                      }`}
+                      title={seat.firstName ? `${seat.firstName} ${seat.lastName}` : `Platz ${seat.seatNumber} (${seat.seatType})`}
+                    />
+                  ))}
+                </div>
+                <div className="text-xs text-[#52525b]">{occupied}/9 belegt · {checkedIn} da</div>
+              </div>
+            </div>
           );
         })}
       </div>
@@ -161,10 +214,29 @@ export default function Tables() {
         return (
           <div className="gfd-card p-6 mb-6 animate-fade-in">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-white">Tisch {table.tableNumber}</h2>
-              <button className="text-[#64748b] hover:text-white" onClick={() => setExpandedTable(null)}>
-                <ChevronUp size={20} />
-              </button>
+              <h2 className="text-lg font-bold text-white">{table.tableName || `Tisch ${table.tableNumber}`}</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors"
+                  title="Umbenennen"
+                  onClick={() => {
+                    setEditingTable(table.id);
+                    setEditName(table.tableName || `Tisch ${table.tableNumber}`);
+                  }}
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-red-400 transition-colors"
+                  title="Löschen"
+                  onClick={() => deleteTable(table.id, table.tableName || `Tisch ${table.tableNumber}`)}
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button className="text-[#64748b] hover:text-white" onClick={() => setExpandedTable(null)}>
+                  <ChevronUp size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Circular table */}

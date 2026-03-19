@@ -5,7 +5,8 @@ import app from '../lib/firebase';
 import { collection, onSnapshot, query, getDocs, addDoc, updateDoc, doc, writeBatch, serverTimestamp, limit } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { Users, Plus, Trash2, Shield, ScanLine, Calendar, Rocket } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, ScanLine, Calendar, Rocket, Mail, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import api from '../lib/api';
 
 export default function Settings() {
   const { user } = useAuth();
@@ -15,6 +16,14 @@ export default function Settings() {
   const [event, setEvent] = useState(null);
   const [eventForm, setEventForm] = useState({ name: '', date: '', location: '', description: '' });
   const [initStatus, setInitStatus] = useState('');
+  const [emailConfig, setEmailConfig] = useState({
+    smtp_host: '', smtp_port: 587, smtp_secure: false,
+    smtp_user: '', smtp_pass: '',
+    from_name: 'German Finance Dinner', from_email: '', reply_to: 'participants@finance-network.co'
+  });
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailTesting, setEmailTesting] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null); // { type: 'success'|'error', message: '' }
 
   useEffect(() => {
     const unsub = onSnapshot(query(collection(db, 'users')), (snapshot) => {
@@ -22,8 +31,44 @@ export default function Settings() {
     });
 
     loadEvent();
+    loadEmailConfig();
     return () => unsub();
   }, []);
+
+  const loadEmailConfig = async () => {
+    try {
+      const res = await api.get('/email/config');
+      setEmailConfig(res.data);
+    } catch (err) {
+      // Config not found yet, use defaults
+    }
+  };
+
+  const saveEmailConfig = async () => {
+    setEmailSaving(true);
+    setEmailStatus(null);
+    try {
+      await api.put('/email/config', emailConfig);
+      setEmailStatus({ type: 'success', message: 'E-Mail-Konfiguration gespeichert.' });
+    } catch (err) {
+      setEmailStatus({ type: 'error', message: err.response?.data?.error || 'Speichern fehlgeschlagen.' });
+    } finally {
+      setEmailSaving(false);
+    }
+  };
+
+  const testEmailConnection = async () => {
+    setEmailTesting(true);
+    setEmailStatus(null);
+    try {
+      const res = await api.post('/email/test');
+      setEmailStatus({ type: 'success', message: res.data.message || 'SMTP-Verbindung erfolgreich.' });
+    } catch (err) {
+      setEmailStatus({ type: 'error', message: err.response?.data?.error || 'SMTP-Verbindung fehlgeschlagen.' });
+    } finally {
+      setEmailTesting(false);
+    }
+  };
 
   const loadEvent = async () => {
     const snapshot = await getDocs(collection(db, 'events'));
@@ -253,6 +298,66 @@ export default function Settings() {
               )}
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Email Configuration */}
+      <div className="gfd-card p-6 mt-6">
+        <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Mail size={16} className="text-[#4a8af4]" /> E-Mail-Konfiguration
+        </h2>
+
+        {emailStatus && (
+          <div className={`flex items-center gap-2 p-3 rounded-lg mb-4 text-sm ${emailStatus.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+            {emailStatus.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+            {emailStatus.message}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">SMTP Host</label>
+            <input className="gfd-input" placeholder="smtp.example.com" value={emailConfig.smtp_host || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_host: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">SMTP Port</label>
+            <input className="gfd-input" type="number" placeholder="587" value={emailConfig.smtp_port || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_port: parseInt(e.target.value) || 587 })} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Benutzername</label>
+            <input className="gfd-input" placeholder="user@example.com" value={emailConfig.smtp_user || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_user: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Passwort</label>
+            <input className="gfd-input" type="password" placeholder="••••••••" value={emailConfig.smtp_pass || ''} onChange={e => setEmailConfig({ ...emailConfig, smtp_pass: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absendername</label>
+            <input className="gfd-input" placeholder="German Finance Dinner" value={emailConfig.from_name || ''} onChange={e => setEmailConfig({ ...emailConfig, from_name: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Absender-E-Mail</label>
+            <input className="gfd-input" type="email" placeholder="noreply@example.com" value={emailConfig.from_email || ''} onChange={e => setEmailConfig({ ...emailConfig, from_email: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Antwort-an (Reply-To)</label>
+            <input className="gfd-input" type="email" placeholder="participants@finance-network.co" value={emailConfig.reply_to || ''} onChange={e => setEmailConfig({ ...emailConfig, reply_to: e.target.value })} />
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-[#a1a1aa]">
+              <input type="checkbox" className="w-4 h-4 rounded border-[#1a1a2e] bg-[#0c0c0f] accent-[#4a8af4]" checked={!!emailConfig.smtp_secure} onChange={e => setEmailConfig({ ...emailConfig, smtp_secure: e.target.checked })} />
+              SSL/TLS (Secure)
+            </label>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button className="gfd-btn" onClick={saveEmailConfig} disabled={emailSaving}>
+            {emailSaving ? <Loader2 size={14} className="animate-spin" /> : null} Speichern
+          </button>
+          <button className="gfd-btn gfd-btn-outline" onClick={testEmailConnection} disabled={emailTesting}>
+            {emailTesting ? <Loader2 size={14} className="animate-spin" /> : null} Verbindung testen
+          </button>
         </div>
       </div>
     </div>

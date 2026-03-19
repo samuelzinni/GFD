@@ -100,4 +100,127 @@ router.post('/:tableId/seats/:seatId/unassign', async (req, res) => {
   });
 });
 
+// Rename table
+router.put('/:tableId', async (req, res) => {
+  const authMiddleware = req.app.get('authMiddleware');
+  const adminMiddleware = req.app.get('adminMiddleware');
+  authMiddleware(req, res, () => {
+    adminMiddleware(req, res, async () => {
+      try {
+        const { tableName } = req.body;
+        if (!tableName || !tableName.trim()) {
+          return res.status(400).json({ error: 'tableName is required' });
+        }
+        const db = admin.firestore();
+        const tableRef = db.collection('tables').doc(req.params.tableId);
+        const tableDoc = await tableRef.get();
+        if (!tableDoc.exists) {
+          return res.status(404).json({ error: 'Table not found' });
+        }
+        await tableRef.update({ tableName: tableName.trim() });
+        res.json({ success: true });
+      } catch (err) {
+        console.error('Error renaming table:', err);
+        res.status(500).json({ error: 'Failed to rename table' });
+      }
+    });
+  });
+});
+
+// Delete table
+router.delete('/:tableId', async (req, res) => {
+  const authMiddleware = req.app.get('authMiddleware');
+  const adminMiddleware = req.app.get('adminMiddleware');
+  authMiddleware(req, res, () => {
+    adminMiddleware(req, res, async () => {
+      try {
+        const db = admin.firestore();
+        const tableRef = db.collection('tables').doc(req.params.tableId);
+        const tableDoc = await tableRef.get();
+        if (!tableDoc.exists) {
+          return res.status(404).json({ error: 'Table not found' });
+        }
+
+        // Get all seats for this table
+        const seatsSnap = await db.collection('seats')
+          .where('tableId', '==', req.params.tableId)
+          .get();
+
+        // Check if any seats have participants assigned
+        const hasAssigned = seatsSnap.docs.some(d => d.data().participantId);
+        if (hasAssigned) {
+          return res.status(400).json({ error: 'Tisch hat noch zugewiesene Teilnehmer' });
+        }
+
+        // Delete all seats and the table in a batch
+        const batch = db.batch();
+        seatsSnap.docs.forEach(seatDoc => batch.delete(seatDoc.ref));
+        batch.delete(tableRef);
+        await batch.commit();
+
+        res.json({ success: true });
+      } catch (err) {
+        console.error('Error deleting table:', err);
+        res.status(500).json({ error: 'Failed to delete table' });
+      }
+    });
+  });
+});
+
+// Create a new table with 9 default seats
+router.post('/', async (req, res) => {
+  const authMiddleware = req.app.get('authMiddleware');
+  const adminMiddleware = req.app.get('adminMiddleware');
+  authMiddleware(req, res, () => {
+    adminMiddleware(req, res, async () => {
+      try {
+        const { eventId } = req.body;
+        if (!eventId) {
+          return res.status(400).json({ error: 'eventId is required' });
+        }
+
+        const db = admin.firestore();
+
+        // Determine next table number
+        const existingTables = await db.collection('tables')
+          .where('eventId', '==', eventId)
+          .orderBy('tableNumber', 'desc')
+          .limit(1)
+          .get();
+        const nextNumber = existingTables.empty ? 1 : existingTables.docs[0].data().tableNumber + 1;
+
+        const seatPattern = ['student', 'student', 'executive', 'student', 'student', 'executive', 'student', 'student', 'executive'];
+
+        const batch = db.batch();
+
+        const tableRef = db.collection('tables').doc();
+        batch.set(tableRef, {
+          eventId,
+          tableNumber: nextNumber,
+          tableName: `Tisch ${nextNumber}`,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        for (let s = 1; s <= 9; s++) {
+          const seatRef = db.collection('seats').doc();
+          batch.set(seatRef, {
+            tableId: tableRef.id,
+            eventId,
+            seatNumber: s,
+            seatType: seatPattern[s - 1],
+            participantId: null,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+
+        await batch.commit();
+        res.json({ success: true, tableId: tableRef.id, tableNumber: nextNumber });
+      } catch (err) {
+        console.error('Error creating table:', err);
+        res.status(500).json({ error: 'Failed to create table' });
+      }
+    });
+  });
+});
+
 module.exports = router;

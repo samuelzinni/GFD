@@ -36,7 +36,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   const authMiddleware = req.app.get('authMiddleware');
   authMiddleware(req, res, async () => {
-    const { firstName, lastName, email, role, eventId, tableId, seatId, notes } = req.body;
+    const { firstName, lastName, email, phone, role, eventId, tableId, seatId, notes } = req.body;
     const ticketCode = generateTicketCode();
 
     const ref = await admin.firestore().collection('participants').add({
@@ -45,6 +45,7 @@ router.post('/', async (req, res) => {
       firstName,
       lastName,
       email,
+      phone: phone || null,
       role: role || 'student',
       tableId: tableId || null,
       seatId: seatId || null,
@@ -70,7 +71,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const authMiddleware = req.app.get('authMiddleware');
   authMiddleware(req, res, async () => {
-    const { firstName, lastName, email, role, tableId, seatId, notes } = req.body;
+    const { firstName, lastName, email, phone, role, tableId, seatId, notes } = req.body;
     const db = admin.firestore();
 
     // Clear old seat
@@ -80,7 +81,7 @@ router.put('/:id', async (req, res) => {
     }
 
     await db.collection('participants').doc(req.params.id).update({
-      firstName, lastName, email, role,
+      firstName, lastName, email, phone: phone || null, role,
       tableId: tableId || null,
       seatId: seatId || null,
       notes: notes || null

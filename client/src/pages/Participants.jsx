@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, orderBy, addDoc, updateDoc, deleteDoc, doc, getDocs, serverTimestamp } from 'firebase/firestore';
-import { Plus, Upload, Search, Download, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Plus, Upload, Search, Download, Loader2, Trash2, Edit2, Check, X, Mail, Send, Phone } from 'lucide-react';
+import api from '../lib/api';
 
 export default function Participants() {
   const [participants, setParticipants] = useState([]);
@@ -9,9 +10,12 @@ export default function Participants() {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'student', notes: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', role: 'student', notes: '' });
   const [filter, setFilter] = useState('all');
   const [tables, setTables] = useState([]);
+  const [downloadingId, setDownloadingId] = useState(null);
+  const [sendingId, setSendingId] = useState(null);
+  const [sendingAll, setSendingAll] = useState(false);
 
   useEffect(() => {
     let unsubParticipants = null;
@@ -63,7 +67,7 @@ export default function Participants() {
       tableId: form.tableId || null,
       createdAt: serverTimestamp()
     });
-    setForm({ firstName: '', lastName: '', email: '', role: 'student', notes: '' });
+    setForm({ firstName: '', lastName: '', email: '', phone: '', role: 'student', notes: '' });
     setShowAdd(false);
   };
 
@@ -72,6 +76,7 @@ export default function Participants() {
       firstName: form.firstName,
       lastName: form.lastName,
       email: form.email,
+      phone: form.phone || null,
       role: form.role,
       notes: form.notes
     });
@@ -87,8 +92,66 @@ export default function Participants() {
     alert('Import ist momentan nicht verfügbar');
   };
 
-  const downloadTicket = () => {
-    alert('PDF-Download ist momentan nicht verfügbar');
+  const sendTicket = async (participant) => {
+    if (!participant.email) {
+      alert('Teilnehmer hat keine E-Mail-Adresse.');
+      return;
+    }
+    setSendingId(participant.id);
+    try {
+      const response = await api.post(`/email/send/${participant.id}`);
+      alert(response.data.message || `Ticket an ${participant.email} gesendet.`);
+    } catch (err) {
+      console.error('Send ticket failed:', err);
+      alert(err.response?.data?.error || 'E-Mail-Versand fehlgeschlagen.');
+    } finally {
+      setSendingId(null);
+    }
+  };
+
+  const sendAllTickets = async () => {
+    if (!confirm('Tickets an alle Teilnehmer senden, die noch kein Ticket erhalten haben?')) return;
+    setSendingAll(true);
+    try {
+      const response = await api.post('/email/send-all');
+      const { sent, failed, total, errors } = response.data;
+      let msg = `${sent} von ${total} Tickets erfolgreich gesendet.`;
+      if (failed > 0) {
+        msg += `\n${failed} fehlgeschlagen.`;
+        if (errors?.length) {
+          msg += '\n\nFehler:\n' + errors.map(e => `- ${e.participant}: ${e.error}`).join('\n');
+        }
+      }
+      alert(msg);
+    } catch (err) {
+      console.error('Send all tickets failed:', err);
+      alert(err.response?.data?.error || 'Massenversand fehlgeschlagen.');
+    } finally {
+      setSendingAll(false);
+    }
+  };
+
+  const downloadTicket = async (participant) => {
+    setDownloadingId(participant.id);
+    try {
+      const response = await api.get(`/tickets/${participant.id}/pdf`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ticket-${participant.firstName}-${participant.lastName}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF download failed:', err);
+      alert('PDF-Download fehlgeschlagen. Bitte versuche es erneut.');
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   return (
@@ -99,11 +162,14 @@ export default function Participants() {
           <p className="text-sm text-[#64748b]">{participants.length} Teilnehmer registriert</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button className="gfd-btn" onClick={() => { setShowAdd(true); setForm({ firstName: '', lastName: '', email: '', role: 'student', notes: '' }); }}>
+          <button className="gfd-btn" onClick={() => { setShowAdd(true); setForm({ firstName: '', lastName: '', email: '', phone: '', role: 'student', notes: '' }); }}>
             <Plus size={16} /> Hinzufügen
           </button>
           <button className="gfd-btn gfd-btn-outline" onClick={handleImport}>
             <Upload size={16} /> Importieren
+          </button>
+          <button className="gfd-btn gfd-btn-outline" onClick={sendAllTickets} disabled={sendingAll}>
+            {sendingAll ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Alle Tickets senden
           </button>
         </div>
       </div>
@@ -111,7 +177,7 @@ export default function Participants() {
       <div className="flex flex-wrap gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#52525b]" />
-          <input className="gfd-input pl-10" placeholder="Suche nach Name, E-Mail oder Ticket-Code..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="gfd-input !pl-10" placeholder="Suche nach Name, E-Mail oder Ticket-Code..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <select className="gfd-select w-auto" value={filter} onChange={e => setFilter(e.target.value)}>
           <option value="all">Alle</option>
@@ -125,10 +191,11 @@ export default function Participants() {
       {showAdd && (
         <div className="gfd-card p-4 mb-4 animate-fade-in">
           <h3 className="text-sm font-semibold text-white mb-3">Neuen Teilnehmer hinzufügen</h3>
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <input className="gfd-input" placeholder="Vorname" value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} />
             <input className="gfd-input" placeholder="Nachname" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} />
             <input className="gfd-input" placeholder="E-Mail" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+            <input className="gfd-input" placeholder="Telefonnummer" type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
             <select className="gfd-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
               <option value="student">Student</option>
               <option value="executive">Executive</option>
@@ -139,7 +206,7 @@ export default function Participants() {
                 <option key={t.id} value={t.id}>Tisch {t.tableNumber}</option>
               ))}
             </select>
-            <div className="flex gap-2">
+            <div className="flex gap-2 md:col-span-2">
               <button className="gfd-btn flex-1" onClick={handleAdd}>Speichern</button>
               <button className="gfd-btn gfd-btn-outline" onClick={() => setShowAdd(false)}><X size={16} /></button>
             </div>
@@ -147,16 +214,17 @@ export default function Participants() {
         </div>
       )}
 
-      <div className="gfd-card overflow-x-auto">
+      <div className="gfd-card overflow-x-auto px-2 sm:px-0">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#1a1a2e]">
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Name</th>
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase hidden md:table-cell">E-Mail</th>
+              <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase hidden md:table-cell">Telefon</th>
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Rolle</th>
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase hidden lg:table-cell">Tisch</th>
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Status</th>
-              <th className="text-right p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Aktionen</th>
+              <th className="text-right py-3 pr-3 pl-6 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Aktionen</th>
             </tr>
           </thead>
           <tbody>
@@ -166,9 +234,10 @@ export default function Participants() {
                   <>
                     <td className="p-3"><input className="gfd-input text-sm" value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} /><input className="gfd-input text-sm mt-1" value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} /></td>
                     <td className="p-3 hidden md:table-cell"><input className="gfd-input text-sm" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></td>
+                    <td className="p-3 hidden md:table-cell"><input className="gfd-input text-sm" type="tel" placeholder="Telefonnummer" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></td>
                     <td className="p-3"><select className="gfd-select text-sm" value={form.role} onChange={e => setForm({...form, role: e.target.value})}><option value="student">Student</option><option value="executive">Executive</option></select></td>
                     <td className="p-3 hidden lg:table-cell"></td><td className="p-3"></td>
-                    <td className="p-3 text-right">
+                    <td className="py-3 pr-3 pl-6 text-right">
                       <button className="gfd-btn text-xs py-1 px-3 mr-1" onClick={() => handleUpdate(p.id)}><Check size={14} /></button>
                       <button className="gfd-btn gfd-btn-outline text-xs py-1 px-3" onClick={() => setEditingId(null)}><X size={14} /></button>
                     </td>
@@ -180,6 +249,11 @@ export default function Participants() {
                       <div className="text-xs text-[#52525b] font-mono">{p.ticketCode}</div>
                     </td>
                     <td className="p-3 text-[#a1a1aa] hidden md:table-cell">{p.email}</td>
+                    <td className="p-3 text-[#a1a1aa] hidden md:table-cell">
+                      {p.phone ? (
+                        <a href={`tel:${p.phone}`} className="hover:text-white transition-colors">{p.phone}</a>
+                      ) : '-'}
+                    </td>
                     <td className="p-3">
                       <span className={`gfd-badge ${p.role === 'student' ? 'gfd-badge-blue' : 'gfd-badge-amber'}`}>
                         {p.role === 'student' ? 'Student' : 'Executive'}
@@ -193,17 +267,32 @@ export default function Participants() {
                           {p.checkedInByName && <div className="text-xs text-[#52525b] mt-1">von {p.checkedInByName}</div>}
                         </div>
                       ) : (
-                        <span className="gfd-badge gfd-badge-gray">Ausstehend</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="gfd-badge gfd-badge-gray">Ausstehend</span>
+                          {filter === 'not-checked-in' && p.phone && (
+                            <a href={`tel:${p.phone}`} className="text-green-500 hover:text-green-400 transition-colors" title="Anrufen">
+                              <Phone size={14} />
+                            </a>
+                          )}
+                        </div>
                       )}
                     </td>
-                    <td className="p-3 text-right">
+                    <td className="py-3 pr-3 pl-6 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button title="Bearbeiten" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors" onClick={() => { setEditingId(p.id); setForm({ firstName: p.firstName, lastName: p.lastName, email: p.email, role: p.role, notes: p.notes || '' }); }}>
+                        <button title="Bearbeiten" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors" onClick={() => { setEditingId(p.id); setForm({ firstName: p.firstName, lastName: p.lastName, email: p.email, phone: p.phone || '', role: p.role, notes: p.notes || '' }); }}>
                           <Edit2 size={14} />
                         </button>
-                        <button title="Ticket PDF" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors" onClick={() => downloadTicket(p.id)}>
-                          <Download size={14} />
+                        <button title="Ticket PDF" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors disabled:opacity-50" disabled={downloadingId === p.id} onClick={() => downloadTicket(p)}>
+                          {downloadingId === p.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                         </button>
+                        <button title="Ticket senden" className={`p-1.5 rounded hover:bg-[#1a1a2e] transition-colors disabled:opacity-50 ${p.ticketSent ? 'text-green-500 hover:text-green-400' : 'text-[#64748b] hover:text-[#4a8af4]'}`} disabled={sendingId === p.id} onClick={() => sendTicket(p)}>
+                          {sendingId === p.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                        </button>
+                        {!p.checkedIn && p.phone && (
+                          <a title="Anrufen" href={`tel:${p.phone}`} className="p-1.5 rounded hover:bg-[#1a1a2e] text-green-500 hover:text-green-400 transition-colors">
+                            <Phone size={14} />
+                          </a>
+                        )}
                         <button title="Löschen" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-red-400 transition-colors" onClick={() => handleDelete(p.id)}>
                           <Trash2 size={14} />
                         </button>

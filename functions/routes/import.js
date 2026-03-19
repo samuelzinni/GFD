@@ -84,6 +84,7 @@ router.post('/', async (req, res) => {
       const lastName = getField(row, 'lastname', 'last_name', 'nachname', 'Last Name', 'surname');
       const email = getField(row, 'email', 'e-mail', 'emailaddress', 'mail');
       const roleStr = getField(row, 'role', 'typ', 'type', 'rolle').toLowerCase();
+      const phone = getField(row, 'phone', 'telefon', 'telefonnummer', 'phone_number', 'phonenumber', 'mobile', 'mobil', 'handy', 'tel');
       const notes = getField(row, 'notes', 'notizen', 'bemerkung', 'comment');
 
       if (!firstName && !lastName) { errors.push({ row: i + 2, error: 'Missing name' }); continue; }
@@ -94,7 +95,7 @@ router.post('/', async (req, res) => {
 
       try {
         const ref = await db.collection('participants').add({
-          eventId, ticketCode, firstName, lastName, email, role,
+          eventId, ticketCode, firstName, lastName, email, phone: phone || null, role,
           tableId: null, seatId: null,
           checkedIn: false, checkedInAt: null, checkedInBy: null, checkedInByName: null,
           ticketSent: false, ticketSentAt: null,
