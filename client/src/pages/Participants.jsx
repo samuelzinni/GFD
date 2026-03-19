@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { Plus, Upload, Search, Download, Mail, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Plus, Upload, Search, Download, Trash2, Edit2, Check, X } from 'lucide-react';
 import { getAuthToken } from '../lib/api';
 
 export default function Participants() {
@@ -23,11 +23,9 @@ export default function Participants() {
         const eid = evRes.data[0].id;
         setEventId(eid);
 
-        // Realtime listener
         const q = query(collection(db, 'participants'), where('eventId', '==', eid), orderBy('lastName'), orderBy('firstName'));
         unsub = onSnapshot(q, (snapshot) => {
-          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setParticipants(data);
+          setParticipants(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });
       }
     };
@@ -42,7 +40,6 @@ export default function Participants() {
     if (filter === 'not-checked-in') return matchesSearch && !p.checkedIn;
     if (filter === 'student') return matchesSearch && p.role === 'student';
     if (filter === 'executive') return matchesSearch && p.role === 'executive';
-    if (filter === 'no-ticket') return matchesSearch && !p.ticketSent;
     return matchesSearch;
   });
 
@@ -62,14 +59,6 @@ export default function Participants() {
     await api.delete(`/participants/${id}`);
   };
 
-  const handleSendTicket = async (id) => {
-    try {
-      await api.post(`/email/send/${id}`);
-    } catch (err) {
-      alert(err.response?.data?.error || 'Fehler beim Senden');
-    }
-  };
-
   const handleImport = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -83,16 +72,6 @@ export default function Participants() {
       alert(err.response?.data?.error || 'Import fehlgeschlagen');
     }
     e.target.value = '';
-  };
-
-  const handleSendAll = async () => {
-    if (!confirm('Tickets an alle Studenten senden, die noch kein Ticket erhalten haben?')) return;
-    try {
-      const res = await api.post('/email/send-all', { event_id: eventId });
-      alert(`${res.data.sent} Tickets gesendet, ${res.data.failed} fehlgeschlagen`);
-    } catch (err) {
-      alert(err.response?.data?.error || 'Fehler beim Massenversand');
-    }
   };
 
   const downloadTicket = async (id) => {
@@ -115,9 +94,6 @@ export default function Participants() {
             <Upload size={16} /> Importieren
             <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImport} />
           </label>
-          <button className="gfd-btn gfd-btn-outline" onClick={handleSendAll}>
-            <Mail size={16} /> Alle Tickets senden
-          </button>
         </div>
       </div>
 
@@ -132,7 +108,6 @@ export default function Participants() {
           <option value="executive">Executives</option>
           <option value="checked-in">Eingecheckt</option>
           <option value="not-checked-in">Nicht eingecheckt</option>
-          <option value="no-ticket">Kein Ticket gesendet</option>
         </select>
       </div>
 
@@ -164,7 +139,6 @@ export default function Participants() {
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Rolle</th>
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase hidden lg:table-cell">Tisch</th>
               <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Status</th>
-              <th className="text-left p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase hidden lg:table-cell">Ticket</th>
               <th className="text-right p-3 text-xs font-semibold text-[#64748b] tracking-wider uppercase">Aktionen</th>
             </tr>
           </thead>
@@ -176,7 +150,7 @@ export default function Participants() {
                     <td className="p-3"><input className="gfd-input text-sm" value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} /><input className="gfd-input text-sm mt-1" value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} /></td>
                     <td className="p-3 hidden md:table-cell"><input className="gfd-input text-sm" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></td>
                     <td className="p-3"><select className="gfd-select text-sm" value={form.role} onChange={e => setForm({...form, role: e.target.value})}><option value="student">Student</option><option value="executive">Executive</option></select></td>
-                    <td className="p-3 hidden lg:table-cell"></td><td className="p-3"></td><td className="p-3 hidden lg:table-cell"></td>
+                    <td className="p-3 hidden lg:table-cell"></td><td className="p-3"></td>
                     <td className="p-3 text-right">
                       <button className="gfd-btn text-xs py-1 px-3 mr-1" onClick={() => handleUpdate(p.id)}><Check size={14} /></button>
                       <button className="gfd-btn gfd-btn-outline text-xs py-1 px-3" onClick={() => setEditingId(null)}><X size={14} /></button>
@@ -205,9 +179,6 @@ export default function Participants() {
                         <span className="gfd-badge gfd-badge-gray">Ausstehend</span>
                       )}
                     </td>
-                    <td className="p-3 hidden lg:table-cell">
-                      {p.ticketSent ? <span className="gfd-badge gfd-badge-green">Gesendet</span> : <span className="gfd-badge gfd-badge-gray">Nicht gesendet</span>}
-                    </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button title="Bearbeiten" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors" onClick={() => { setEditingId(p.id); setForm({ firstName: p.firstName, lastName: p.lastName, email: p.email, role: p.role, notes: p.notes || '' }); }}>
@@ -216,11 +187,6 @@ export default function Participants() {
                         <button title="Ticket PDF" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-white transition-colors" onClick={() => downloadTicket(p.id)}>
                           <Download size={14} />
                         </button>
-                        {p.role === 'student' && !p.ticketSent && (
-                          <button title="Ticket senden" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-[#4a8af4] transition-colors" onClick={() => handleSendTicket(p.id)}>
-                            <Mail size={14} />
-                          </button>
-                        )}
                         <button title="Löschen" className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-red-400 transition-colors" onClick={() => handleDelete(p.id)}>
                           <Trash2 size={14} />
                         </button>

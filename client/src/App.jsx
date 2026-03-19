@@ -6,7 +6,6 @@ import Dashboard from './pages/Dashboard';
 import Participants from './pages/Participants';
 import Tables from './pages/Tables';
 import Scanner from './pages/Scanner';
-import Email from './pages/Email';
 import Settings from './pages/Settings';
 
 function ProtectedRoute({ children }) {
@@ -26,7 +25,6 @@ function App() {
           <Route path="/participants" element={<ProtectedRoute><Participants /></ProtectedRoute>} />
           <Route path="/tables" element={<ProtectedRoute><Tables /></ProtectedRoute>} />
           <Route path="/scanner" element={<ProtectedRoute><Scanner /></ProtectedRoute>} />
-          <Route path="/email" element={<ProtectedRoute><Email /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>

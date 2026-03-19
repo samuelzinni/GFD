@@ -39,7 +39,6 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/participants', require('./routes/participants'));
 app.use('/api/tables', require('./routes/tables'));
 app.use('/api/tickets', require('./routes/tickets'));
-app.use('/api/email', require('./routes/email'));
 app.use('/api/scan', require('./routes/scan'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/import', require('./routes/import'));

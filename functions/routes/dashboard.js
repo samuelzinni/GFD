@@ -11,13 +11,12 @@ router.get('/stats', async (req, res) => {
     const db = admin.firestore();
     const participants = await db.collection('participants').where('eventId', '==', eventId).get();
 
-    let totalStudents = 0, totalExecutives = 0, checkedIn = 0, ticketsSent = 0, seated = 0;
+    let totalStudents = 0, totalExecutives = 0, checkedIn = 0, seated = 0;
     participants.forEach(doc => {
       const p = doc.data();
       if (p.role === 'student') totalStudents++;
       else totalExecutives++;
       if (p.checkedIn) checkedIn++;
-      if (p.ticketSent) ticketsSent++;
       if (p.seatId) seated++;
     });
 
@@ -29,8 +28,6 @@ router.get('/stats', async (req, res) => {
       totalExecutives,
       checkedIn,
       notCheckedIn: participants.size - checkedIn,
-      ticketsSent,
-      ticketsNotSent: totalStudents - ticketsSent,
       tablesCount: tables.size,
       seatedParticipants: seated
     });

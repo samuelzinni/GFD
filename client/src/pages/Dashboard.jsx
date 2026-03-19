@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { Users, UserCheck, Ticket, Grid3X3, Clock, TrendingUp } from 'lucide-react';
+import { Users, UserCheck, Grid3X3, Clock, TrendingUp, Armchair } from 'lucide-react';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -54,8 +54,8 @@ export default function Dashboard() {
   const statCards = [
     { label: 'Teilnehmer', value: stats.totalParticipants, icon: Users, sub: `${stats.totalStudents} Studenten · ${stats.totalExecutives} Executives` },
     { label: 'Eingecheckt', value: stats.checkedIn, icon: UserCheck, sub: `${stats.notCheckedIn} ausstehend` },
-    { label: 'Tickets gesendet', value: stats.ticketsSent, icon: Ticket, sub: `${stats.ticketsNotSent} ausstehend` },
-    { label: 'Tische', value: stats.tablesCount, icon: Grid3X3, sub: `${stats.seatedParticipants} Plätze belegt` },
+    { label: 'Platziert', value: stats.seatedParticipants, icon: Armchair, sub: `${stats.totalParticipants - stats.seatedParticipants} ohne Platz` },
+    { label: 'Tische', value: stats.tablesCount, icon: Grid3X3, sub: `${stats.seatedParticipants} / ${stats.tablesCount * 9} Plätze belegt` },
   ];
 
   const checkinPercent = stats.totalParticipants > 0

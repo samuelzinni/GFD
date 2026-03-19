@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,10 +15,10 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
+      await login(username, password);
       navigate('/');
-    } catch (err) {
-      setError('Ungültige Anmeldedaten. Überprüfe E-Mail und Passwort.');
+    } catch {
+      setError('Ungültige Anmeldedaten.');
     } finally {
       setLoading(false);
     }
@@ -42,15 +42,16 @@ export default function Login() {
           )}
 
           <div className="mb-4">
-            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-2">E-Mail</label>
+            <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-2">Benutzername</label>
             <input
-              type="email"
+              type="text"
               className="gfd-input"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              value={username}
+              onChange={e => setUsername(e.target.value)}
               required
               autoFocus
-              placeholder="name@example.com"
+              autoComplete="username"
+              placeholder="samuelzinni"
             />
           </div>
 
@@ -62,6 +63,7 @@ export default function Login() {
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
+              autoComplete="current-password"
             />
           </div>
 

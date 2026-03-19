@@ -2,20 +2,19 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, onSnapshot, query } from 'firebase/firestore';
 import { Users, Plus, Trash2, Shield, ScanLine, Calendar, Rocket } from 'lucide-react';
 
 export default function Settings() {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', displayName: '', role: 'scanner' });
+  const [form, setForm] = useState({ username: '', password: '', displayName: '', role: 'scanner' });
   const [event, setEvent] = useState(null);
   const [eventForm, setEventForm] = useState({ name: '', date: '', location: '', description: '' });
   const [initStatus, setInitStatus] = useState('');
 
   useEffect(() => {
-    // Realtime users list
     const unsub = onSnapshot(query(collection(db, 'users')), (snapshot) => {
       setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
@@ -44,12 +43,23 @@ export default function Settings() {
   };
 
   const addUser = async () => {
+    if (!form.username || !form.password) return alert('Username und Passwort erforderlich');
+    if (form.password.length < 6) return alert('Passwort muss mindestens 6 Zeichen haben');
     try {
       await api.post('/setup/users', form);
-      setForm({ email: '', password: '', displayName: '', role: 'scanner' });
+      setForm({ username: '', password: '', displayName: '', role: 'scanner' });
       setShowAdd(false);
     } catch (err) {
       alert(err.response?.data?.error || 'Fehler beim Erstellen');
+    }
+  };
+
+  const deleteUser = async (uid, username) => {
+    if (!confirm(`User "${username}" wirklich löschen?`)) return;
+    try {
+      await api.delete(`/setup/users/${uid}`);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler beim Löschen');
     }
   };
 
@@ -124,13 +134,25 @@ export default function Settings() {
         {showAdd && (
           <div className="p-4 bg-[#000] rounded-lg mb-4 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <input className="gfd-input" placeholder="E-Mail" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-              <input className="gfd-input" placeholder="Passwort (min. 6 Zeichen)" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-              <input className="gfd-input" placeholder="Anzeigename" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} />
-              <select className="gfd-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-                <option value="scanner">Scanner</option>
-                <option value="admin">Admin</option>
-              </select>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Benutzername</label>
+                <input className="gfd-input" placeholder="z.B. maxmustermann" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Passwort</label>
+                <input className="gfd-input" type="password" placeholder="Min. 6 Zeichen" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Anzeigename (optional)</label>
+                <input className="gfd-input" placeholder="Max Mustermann" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748b] tracking-wider uppercase mb-1">Rolle</label>
+                <select className="gfd-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                  <option value="scanner">Scanner</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
             </div>
             <div className="flex gap-2">
               <button className="gfd-btn text-xs" onClick={addUser}>Erstellen</button>
@@ -145,10 +167,19 @@ export default function Settings() {
               <div className="flex items-center gap-3">
                 {u.role === 'admin' ? <Shield size={16} className="text-[#4a8af4]" /> : <ScanLine size={16} className="text-[#64748b]" />}
                 <div>
-                  <div className="text-sm text-white font-medium">{u.displayName}</div>
-                  <div className="text-xs text-[#52525b]">{u.email} · {u.role}</div>
+                  <div className="text-sm text-white font-medium">{u.displayName || u.username}</div>
+                  <div className="text-xs text-[#52525b]">@{u.username} · {u.role}</div>
                 </div>
               </div>
+              {u.id !== user.id && (
+                <button
+                  className="p-1.5 rounded hover:bg-[#1a1a2e] text-[#64748b] hover:text-red-400 transition-colors"
+                  title="Löschen"
+                  onClick={() => deleteUser(u.id, u.username)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           ))}
         </div>

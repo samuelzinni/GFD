@@ -10,6 +10,11 @@ import api from '../lib/api';
 
 const AuthContext = createContext(null);
 
+// Internally map username to email for Firebase Auth
+function usernameToEmail(username) {
+  return `${username.toLowerCase().trim()}@gfd.local`;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,21 +22,16 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Get user profile from Firestore
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userDoc.exists()) {
-          setUser({
-            id: firebaseUser.uid,
-            email: firebaseUser.email,
-            ...userDoc.data()
-          });
+          setUser({ id: firebaseUser.uid, ...userDoc.data() });
         } else {
-          // First user setup - try to register as admin
+          // First user setup
           try {
-            await api.post('/setup/admin', { displayName: firebaseUser.email });
+            await api.post('/setup/admin', {});
             const refreshed = await getDoc(doc(db, 'users', firebaseUser.uid));
             if (refreshed.exists()) {
-              setUser({ id: firebaseUser.uid, email: firebaseUser.email, ...refreshed.data() });
+              setUser({ id: firebaseUser.uid, ...refreshed.data() });
             }
           } catch {
             setUser(null);
@@ -46,14 +46,13 @@ export function AuthProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (username, password) => {
+    const email = usernameToEmail(username);
     const cred = await signInWithEmailAndPassword(auth, email, password);
-    // Trigger setup/admin in case first login
-    try {
-      await api.post('/setup/admin', { displayName: email });
-    } catch {}
+    // Ensure user doc exists
+    try { await api.post('/setup/admin', {}); } catch {}
     const userDoc = await getDoc(doc(db, 'users', cred.user.uid));
-    const userData = userDoc.exists() ? { id: cred.user.uid, email: cred.user.email, ...userDoc.data() } : null;
+    const userData = userDoc.exists() ? { id: cred.user.uid, ...userDoc.data() } : null;
     setUser(userData);
     return userData;
   };

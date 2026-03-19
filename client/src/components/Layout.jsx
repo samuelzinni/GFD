@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  LayoutDashboard, Users, Grid3X3, ScanLine, Mail, Settings, LogOut, Menu, X
+  LayoutDashboard, Users, Grid3X3, ScanLine, Settings, LogOut, Menu, X
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -10,7 +10,6 @@ const NAV_ITEMS = [
   { path: '/participants', label: 'Teilnehmer', icon: Users },
   { path: '/tables', label: 'Tische', icon: Grid3X3 },
   { path: '/scanner', label: 'Scanner', icon: ScanLine },
-  { path: '/email', label: 'E-Mail', icon: Mail },
   { path: '/settings', label: 'Einstellungen', icon: Settings, adminOnly: true },
 ];
 
@@ -76,7 +75,7 @@ export default function Layout({ children }) {
         <div className="p-4 mt-auto border-t border-[#1a1a2e] md:absolute md:bottom-0 md:left-0 md:right-0">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-white font-medium">{user?.display_name}</div>
+              <div className="text-sm text-white font-medium">{user?.displayName}</div>
               <div className="text-xs text-[#64748b]">{user?.role}</div>
             </div>
             <button
